@@ -1,0 +1,8 @@
+**/Lib/
+**/Scripts/
+**/Include/
+**/__pycache__/
+**/build/
+**/dist/
+**/share/
+**/work/
