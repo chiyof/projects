@@ -7,10 +7,10 @@
 # created : Mar 7, 2021
 # last modified: Aug 21, 2022
 """
-mp4lsr.py:
-MP4ファイルの ls-R ファイルを生成する
+mp4indexer.py:
+指定されたディレクトリからMP4ファイルの情報を収集してDBに登録する
 対象ディレクトリは targets に列記しておく
-MP4ファイルでは末尾にフレームサイズを追加する
+動画ファイルではフレームサイズや長さも登録する
 
 音声多重（含む二ヶ国語）の場合には、
 "decode_pce: Input buffer exhausted before END element found"
@@ -28,7 +28,6 @@ from os import environ
 from pathlib import Path
 
 import cv2
-from natsort import os_sorted
 
 
 def lsr_files(directory):
@@ -78,44 +77,107 @@ def index_files(p: Path, con: sqlite3.Connection, cur: sqlite3.Cursor):
             con.commit()
             continue
         f = f.resolve()
+        dirname = str(f.parent).replace("'", "''")
+        fname = f.name.replace("'", "''")
         filetype = f.suffix.upper()[1:]
         if f.suffix.lower() in [".mp4", ".m2ts", ".m2t", ".mpg", ".ts"]:
             # "mp4" or "m2ts" or "mpg"
             logger.debug(f)
-            width, height, length = get_video_info(f)
-            if length != 0:
-                play_length = time.strftime("%H:%M:%S", time.gmtime(math.ceil(length)))
+            # データベースにすでにあるかどうかを確認する
+            timestamp = time.strftime(
+                "%Y/%m/%d %H:%M:%S", time.localtime(f.stat().st_mtime)
+            )
+            cur.execute(
+                f'SELECT * FROM videolist WHERE filename="{fname}" AND directory="{dirname}"'
+            )
+            data = cur.fetchall()
+            try:
+                r = [dict(d) for d in data]
+            except ValueError:
+                r = []
+
+            if len(r):
+                q = r[0]
+                if q["filename"] == fname and q["directory"] == dirname:
+                    if q["datetime"] != timestamp:
+                        cur.execute(
+                            f"UPDATE videolist SET datetime={timestamp} "
+                            f'WHERE filename="{q["filename"]}" AND directory="{q["directory"]}"'
+                        )
+                else:
+                    logger.debug(f"skip update {fname}")
+
             else:
-                play_length = 0
+                logger.debug(f"updating {fname}")
+                width, height, length = get_video_info(f)
+                if length != 0:
+                    play_length = time.strftime(
+                        "%H:%M:%S", time.gmtime(math.ceil(length))
+                    )
+                else:
+                    play_length = 0
+                SQL = f"""INSERT INTO videolist VALUES ("{fname}", "{dirname}", "{filetype}", 
+                    {height}, {width}, "{play_length}", {f.stat().st_size}, "{timestamp}", "") 
+                    on conflict (directory, filename) do nothing"""
+                try:
+                    cur.execute(SQL)
+                except sqlite3.OperationalError as e:
+                    print(SQL)
+                    print(e)
+                    exit(-1)
+
+        elif f.suffix.lower() in [".txt"]:
             timestamp = time.strftime(
                 "%Y/%m/%d %H:%M:%S", time.localtime(f.stat().st_mtime)
             )
-            cur.execute(
-                f'INSERT INTO videolist VALUES ("{f.name}", "{f.parent}", "{filetype}", '
-                f'{height}, {width}, "{play_length}", {f.stat().st_size}, "{timestamp}") '
-                "on conflict (directory, filename) do nothing"
-            )
+            try:
+                description = f.read_text(encoding="utf-8")
+            except UnicodeDecodeError as e:
+                print(e, f)
+                exit(-1)
+            description = description.replace("'", "''")
+            SQL = f"""INSERT INTO videolist VALUES ('{fname}', '{dirname}', '{filetype}',
+                0, 0, '', {f.stat().st_size}, '{timestamp}', '{description}')
+                ON CONFLICT(directory, filename) DO UPDATE SET description = '{description}'
+                """
+            try:
+                cur.execute(SQL)
+            except sqlite3.OperationalError as e:
+                print(SQL)
+                print(e)
+                exit(-1)
+        elif fname == "ls-R":
+            continue
         else:
+            with open("logfile.log", "a") as logfile:
+                print(f"unknown suffix : {f.parent}\\{fname}", file=logfile)
+
             timestamp = time.strftime(
                 "%Y/%m/%d %H:%M:%S", time.localtime(f.stat().st_mtime)
             )
-            cur.execute(
-                f'INSERT INTO videolist VALUES ("{f.name}", "{f.parent}", "{filetype}", '
-                f'0, 0, "", {f.stat().st_size}, "{timestamp}") '
-                "on conflict (directory, filename) do nothing"
-            )
+            SQL = f"""INSERT INTO videolist VALUES ("{fname}", "{dirname}", "{filetype}",
+                0, 0, "", {f.stat().st_size}, "{timestamp}", "")
+                on conflict (directory, filename) do nothing"""
+            try:
+                cur.execute(SQL)
+            except sqlite3.OperationalError as e:
+                print(SQL)
+                print(e)
+                exit(-1)
 
 
 def create_table(cur):
     # talbe videolist
-    # ---------------------
-    # filename | TEXT
-    # dir      | TEXT
-    # height   | INTEGER
-    # width    | INTEGER
-    # len      | TEXT
-    # size     | INTEGER
-    # datetime | INTEGER
+    # ----------------------
+    # filename    | TEXT
+    # directory   | TEXT
+    # filetype    | TEXT
+    # height      | INTEGER
+    # width       | INTEGER
+    # length      | TEXT
+    # filesize    | INTEGER
+    # datetime    | TEXT
+    # description | TEXT
     try:
         cur.execute(
             """
@@ -128,6 +190,7 @@ def create_table(cur):
                 length TEXT,
                 filesize INTEGER,
                 datetime TEXT,
+                description TEXT,
                 PRIMARY KEY (directory, filename))
             """
         )
@@ -209,8 +272,10 @@ def main():
     if args.debug:
         logger.setLevel(logging.DEBUG)
 
+    logger.debug(target_dirs)
     conn = sqlite3.connect(db_file)
     cur = conn.cursor()
+    conn.row_factory = sqlite3.Row
     create_table(cur)
 
     dirs = args.directories
@@ -246,10 +311,10 @@ def main():
 
 if __name__ == "__main__":
     logger = logging.getLogger(__name__)
-    handler = logging.StreamHandler()
+    ch = logging.StreamHandler()
     formatter = logging.Formatter("%(asctime)s %(name)-12s %(levelname)-8s %(message)s")
-    handler.setFormatter(formatter)
-    logger.addHandler(handler)
+    ch.setFormatter(formatter)
+    logger.addHandler(ch)
     logger.setLevel(logging.INFO)
     logger.propagate = False
     main()
