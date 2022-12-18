@@ -26,8 +26,51 @@ import time
 import datetime
 from os import environ
 from pathlib import Path
+from subprocess import run
 
 import cv2
+
+logger = logging.getLogger(__name__)
+
+
+class VideoData:
+    def __init__(self):
+        self.__width = 0
+        self.__height = 0
+        self.__length = 0
+        self.__fourcc = ""
+
+    @property
+    def width(self):
+        return self.__width
+
+    @property
+    def height(self):
+        return self.__height
+
+    @property
+    def length(self):
+        return self.__length
+
+    @property
+    def fourcc(self):
+        return self.__fourcc
+
+    @width.setter
+    def width(self, width):
+        self.__width = width
+
+    @height.setter
+    def height(self, height):
+        self.__height = height
+
+    @length.setter
+    def length(self, length):
+        self.__length = length
+
+    @fourcc.setter
+    def fourcc(self, fourcc):
+        self.__fourcc = fourcc
 
 
 def lsr_files(directory):
@@ -46,9 +89,13 @@ def lsr_files(directory):
 
 def get_video_info(fname: Path):
     """Get frame size data from the video file using OpenCV"""
+    v_data = VideoData()
+
     video_track = cv2.VideoCapture(str(fname))
-    width = video_track.get(cv2.CAP_PROP_FRAME_WIDTH)
-    height = video_track.get(cv2.CAP_PROP_FRAME_HEIGHT)
+    v_data.width = video_track.get(cv2.CAP_PROP_FRAME_WIDTH)
+    v_data.height = video_track.get(cv2.CAP_PROP_FRAME_HEIGHT)
+    fcc_int = int(video_track.get(cv2.CAP_PROP_FOURCC))
+    v_data.fourcc = "".join(list(fcc_int.to_bytes(4, "little").decode("utf-8"))).upper()
     fps = video_track.get(cv2.CAP_PROP_FPS)
     fc = video_track.get(cv2.CAP_PROP_FRAME_COUNT)
     try:
@@ -59,14 +106,18 @@ def get_video_info(fname: Path):
     if length <= 0:
         logger.warn(f"invalid length: {fc} / {fps} on {fname}")
         length = 0
-    if width == 0 or height == 0:
-        logger.warn(f"invalid frame size: width {width} height {height} on {fname}")
+    v_data.length = length
+    if v_data.width == 0 or v_data.height == 0:
+        logger.warn(
+            f"invalid frame size: width {v_data.width} height {v_data.height} on {fname}"
+        )
 
-    return int(width), int(height), int(length)
+    return v_data
 
 
 def index_files(p: Path, con: sqlite3.Connection, cur: sqlite3.Cursor):
     """Get video info from the video file using OpenCV"""
+    v_data = VideoData()
     if p.is_file():
         target = [p]
     else:
@@ -76,94 +127,103 @@ def index_files(p: Path, con: sqlite3.Connection, cur: sqlite3.Cursor):
             logger.info(f)
             con.commit()
             continue
-        f = f.resolve()
+        f = f.absolute()
         dirname = str(f.parent).replace("'", "''")
         fname = f.name.replace("'", "''")
         filetype = f.suffix.upper()[1:]
-        if f.suffix.lower() in [".mp4", ".m2ts", ".m2t", ".mpg", ".ts"]:
-            # "mp4" or "m2ts" or "mpg"
+        timestamp = time.strftime(
+            "%Y/%m/%d %H:%M:%S", time.localtime(f.stat().st_mtime)
+        )
+        if fname == "ls-R":
+            continue
+        else:
             logger.debug(f)
-            # データベースにすでにあるかどうかを確認する
-            timestamp = time.strftime(
-                "%Y/%m/%d %H:%M:%S", time.localtime(f.stat().st_mtime)
-            )
+            # 処理時間短縮のためデータベースにすでにあるかどうかを確認する
             cur.execute(
-                f'SELECT * FROM videolist WHERE filename="{fname}" AND directory="{dirname}"'
+                f"""
+                SELECT * FROM videolist WHERE filename="{fname}"
+                    AND directory="{dirname}" AND datetime="{timestamp}"
+                """
             )
             data = cur.fetchall()
             try:
                 r = [dict(d) for d in data]
             except ValueError:
                 r = []
+            # データがあれば登録不要
+            if r:
+                logger.debug(f"already registered, skip {fname}")
+                continue
 
-            if len(r):
-                q = r[0]
-                if q["filename"] == fname and q["directory"] == dirname:
-                    if q["datetime"] != timestamp:
-                        cur.execute(
-                            f"UPDATE videolist SET datetime={timestamp} "
-                            f'WHERE filename="{q["filename"]}" AND directory="{q["directory"]}"'
-                        )
-                else:
-                    logger.debug(f"skip update {fname}")
-
-            else:
+            # その他に .keyframe, .err がある
+            if filetype in ["MP4", "M2TS", "M2T", "MPG", "TS", "AVI", "MKV"]:
+                # ビデオファイル
                 logger.debug(f"updating {fname}")
-                width, height, length = get_video_info(f)
-                if length != 0:
+                v_data = get_video_info(f)
+                if v_data.length != 0:
                     play_length = time.strftime(
-                        "%H:%M:%S", time.gmtime(math.ceil(length))
+                        "%H:%M:%S", time.gmtime(math.ceil(v_data.length))
                     )
                 else:
                     play_length = 0
-                SQL = f"""INSERT INTO videolist VALUES ("{fname}", "{dirname}", "{filetype}", 
-                    {height}, {width}, "{play_length}", {f.stat().st_size}, "{timestamp}", "") 
+                if filetype in ["M2TS", "M2T", "TS"]:
+                    v_data.fourcc = "MPEG"
+                SQL = f"""INSERT INTO videolist VALUES ("{fname}", "{dirname}", "{filetype}",
+                        {v_data.height}, {v_data.width}, "{play_length}",
+                        {f.stat().st_size}, "{v_data.fourcc}", "{timestamp}", "")
+                    ON CONFLICT (directory, filename)
+                    DO UPDATE SET height = {v_data.height}, width = {v_data.width},
+                        length = "{play_length}", datetime = "{timestamp}", filesize = {f.stat().st_size}"""
+                try:
+                    cur.execute(SQL)
+                except sqlite3.OperationalError as e:
+                    print(e)
+                    logger.error(SQL)
+                    exit(-1)
+                except sqlite3.ProgrammingError as e:
+                    print(e)
+                    logger.error(SQL)
+                    exit(-1)
+
+            elif filetype in ["TXT"]:
+                logger.debug(f"updating {fname}")
+                try:
+                    description = f.read_text(encoding="utf-8")
+                except UnicodeDecodeError:
+                    logger.warning(f"Unicode decoding error: {fname}")
+                    logger.info("run nkf to encode to UTF-8")
+                    cmd = ["nkf", "-w", "--overwrite", "--in-place", f"{f}"]
+                    logger.debug(cmd)
+                    res = run(cmd, capture_output=True)
+                    logger.debug("return code: {}".format(res.returncode))
+                    logger.debug("output: {}".format(res.stdout.decode()))
+                    logger.debug("output: {}".format(res.stderr.decode()))
+                    description = f.read_text(encoding="utf-8")
+                description = description.replace("'", "''").replace('"', '""')
+                SQL = f"""INSERT INTO videolist VALUES ("{fname}", "{dirname}", "{filetype}",
+                        0, 0, "",
+                        {f.stat().st_size}, "", "{timestamp}", "{description}")
+                    ON CONFLICT(directory, filename)
+                    DO UPDATE SET datetime = "{timestamp}", filesize = {f.stat().st_size}, description = "{description}"
+                    """
+                try:
+                    cur.execute(SQL)
+                except sqlite3.OperationalError as e:
+                    print(e)
+                    logger.error(SQL)
+                    exit(-1)
+            else:
+                logger.info(f"unknown suffix : {f.parent}\\{fname}")
+
+                SQL = f"""INSERT INTO videolist VALUES ("{fname}", "{dirname}", "{filetype}",
+                    0, 0, "", {f.stat().st_size}, "", "{timestamp}", "")
                     on conflict (directory, filename) do nothing"""
                 try:
                     cur.execute(SQL)
                 except sqlite3.OperationalError as e:
-                    print(SQL)
                     print(e)
+                    logger.error(SQL)
                     exit(-1)
-
-        elif f.suffix.lower() in [".txt"]:
-            timestamp = time.strftime(
-                "%Y/%m/%d %H:%M:%S", time.localtime(f.stat().st_mtime)
-            )
-            try:
-                description = f.read_text(encoding="utf-8")
-            except UnicodeDecodeError as e:
-                print(e, f)
-                exit(-1)
-            description = description.replace("'", "''")
-            SQL = f"""INSERT INTO videolist VALUES ('{fname}', '{dirname}', '{filetype}',
-                0, 0, '', {f.stat().st_size}, '{timestamp}', '{description}')
-                ON CONFLICT(directory, filename) DO UPDATE SET description = '{description}'
-                """
-            try:
-                cur.execute(SQL)
-            except sqlite3.OperationalError as e:
-                print(SQL)
-                print(e)
-                exit(-1)
-        elif fname == "ls-R":
-            continue
-        else:
-            with open("logfile.log", "a") as logfile:
-                print(f"unknown suffix : {f.parent}\\{fname}", file=logfile)
-
-            timestamp = time.strftime(
-                "%Y/%m/%d %H:%M:%S", time.localtime(f.stat().st_mtime)
-            )
-            SQL = f"""INSERT INTO videolist VALUES ("{fname}", "{dirname}", "{filetype}",
-                0, 0, "", {f.stat().st_size}, "{timestamp}", "")
-                on conflict (directory, filename) do nothing"""
-            try:
-                cur.execute(SQL)
-            except sqlite3.OperationalError as e:
-                print(SQL)
-                print(e)
-                exit(-1)
 
 
 def create_table(cur):
@@ -176,6 +236,7 @@ def create_table(cur):
     # width       | INTEGER
     # length      | TEXT
     # filesize    | INTEGER
+    # fourcc      | TEXT
     # datetime    | TEXT
     # description | TEXT
     try:
@@ -183,14 +244,15 @@ def create_table(cur):
             """
             CREATE TABLE videolist (
                 filename TEXT NOT NULL,
-                directory TEXT,
-                filetype TEXT,
-                height INTEGER,
-                width INTEGER,
-                length TEXT,
-                filesize INTEGER,
-                datetime TEXT,
-                description TEXT,
+                directory TEXT NOT NULL,
+                filetype TEXT NOT NULL DEFAULT "",
+                height INTEGER NOT NULL DEFAULT 0,
+                width INTEGER NOT NULL DEFAULT 0,
+                length TEXT DEFAULT "",
+                filesize INTEGER NOT NULL DEFAULT 0,
+                fourcc TEXT DEFAULT "",
+                datetime TEXT DEFAULT "",
+                description TEXT DEFAULT "",
                 PRIMARY KEY (directory, filename))
             """
         )
@@ -274,8 +336,8 @@ def main():
 
     logger.debug(target_dirs)
     conn = sqlite3.connect(db_file)
-    cur = conn.cursor()
     conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
     create_table(cur)
 
     dirs = args.directories
@@ -310,7 +372,6 @@ def main():
 
 
 if __name__ == "__main__":
-    logger = logging.getLogger(__name__)
     ch = logging.StreamHandler()
     formatter = logging.Formatter("%(asctime)s %(name)-12s %(levelname)-8s %(message)s")
     ch.setFormatter(formatter)
