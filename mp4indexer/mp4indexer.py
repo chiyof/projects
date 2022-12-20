@@ -166,7 +166,7 @@ def index_files(p: Path, con: sqlite3.Connection, cur: sqlite3.Cursor):
                     )
                 else:
                     play_length = 0
-                if filetype in ["M2TS", "M2T", "TS"]:
+                if filetype in ["M2TS", "M2T", "TS", "MPG"]:
                     v_data.fourcc = "MPEG"
                 SQL = f"""INSERT INTO videolist VALUES ("{fname}", "{dirname}", "{filetype}",
                         {v_data.height}, {v_data.width}, "{play_length}",
