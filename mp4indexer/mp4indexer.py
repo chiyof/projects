@@ -34,6 +34,8 @@ logger = logging.getLogger(__name__)
 
 
 class VideoData:
+    """ビデオの情報をプロパティ化してアクセスしやすくするためのクラス"""
+
     def __init__(self):
         self.__width = 0
         self.__height = 0
@@ -42,18 +44,24 @@ class VideoData:
 
     @property
     def width(self):
+        """フレームサイズ（横）"""
         return self.__width
 
     @property
     def height(self):
+        """フレームサイズ（縦）"""
         return self.__height
 
     @property
     def length(self):
+        """再生時間"""
         return self.__length
 
     @property
     def fourcc(self):
+        """ビデオエンコーダ
+        HEV1、AVC1、MPEGなど
+        """
         return self.__fourcc
 
     @width.setter
@@ -115,6 +123,10 @@ def get_video_info(fname: Path):
     return v_data
 
 
+def cleanup(p: Path, con: sqlite3.Connection, cur: sqlite3.Cursor):
+    pass
+
+
 def index_files(p: Path, con: sqlite3.Connection, cur: sqlite3.Cursor):
     """Get video info from the video file using OpenCV"""
     v_data = VideoData()
@@ -132,7 +144,7 @@ def index_files(p: Path, con: sqlite3.Connection, cur: sqlite3.Cursor):
         fname = f.name.replace("'", "''")
         filetype = f.suffix.upper()[1:]
         timestamp = time.strftime(
-            "%Y/%m/%d %H:%M:%S", time.localtime(f.stat().st_mtime)
+            "%Y-%m-%d %H:%M:%S", time.localtime(f.stat().st_mtime)
         )
         if fname == "ls-R":
             continue
@@ -238,11 +250,12 @@ def create_table(cur):
     # filesize    | INTEGER
     # fourcc      | TEXT
     # datetime    | TEXT
+    # keep        | INTEGER
     # description | TEXT
     try:
         cur.execute(
             """
-            CREATE TABLE videolist (
+            CREATE TABLE IF NOT EXISTS videolist (
                 filename TEXT NOT NULL,
                 directory TEXT NOT NULL,
                 filetype TEXT NOT NULL DEFAULT "",
@@ -253,6 +266,7 @@ def create_table(cur):
                 fourcc TEXT DEFAULT "",
                 datetime TEXT DEFAULT "",
                 description TEXT DEFAULT "",
+                keep INTEGER,
                 PRIMARY KEY (directory, filename))
             """
         )
@@ -315,12 +329,20 @@ def main():
         help="directories for search video files",
     )
     parser.add_argument(
+        "-c",
+        "--cleanup",
+        action="store_const",
+        const=True,
+        default=False,
+        help="Clean up database",
+    )
+    parser.add_argument(
         "-d",
         "--debug",
         metavar="debug",
         action="store_const",
-        const=1,
-        default=0,
+        const=True,
+        default=False,
         help="Print Debug information",
     )
     args = parser.parse_args()
@@ -349,7 +371,10 @@ def main():
         if not p.exists():
             logger.info("%s is not exist", p)
         else:
-            index_files(p, conn, cur)
+            if args.cleanup:
+                cleanup(p, conn, cur)
+            else:
+                index_files(p, conn, cur)
 
     time_end = time.perf_counter()
     time_diff = time_end - time_start
