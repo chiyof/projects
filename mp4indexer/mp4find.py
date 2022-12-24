@@ -5,16 +5,10 @@
 #
 # copyright (c) K.Fujii 2021,2022
 # created : Mar 7, 2021
-# last modified: Aug 21, 2022
+# last modified: Dec 24, 2022
 """
-mp4lsr.py:
-MP4ファイルの ls-R ファイルを生成する
-対象ディレクトリは targets に列記しておく
-MP4ファイルでは末尾にフレームサイズを追加する
-
-音声多重（含む二ヶ国語）の場合には、
-"decode_pce: Input buffer exhausted before END element found"
-というエラーがopencvから出力されるが、出力の抑制は出来ない模様
+mp4find.py:
+データベースからMP4ファイルを検索する
 """
 
 import argparse
