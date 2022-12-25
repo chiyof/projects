@@ -5,11 +5,11 @@
 #
 # copyright (c) K.Fujii 2021,2022
 # created : Mar 7, 2021
-# last modified: Aug 21, 2022
+# last modified: Dec 25, 2022
 """
 mp4indexer.py:
 指定されたディレクトリからMP4ファイルの情報を収集してDBに登録する
-対象ディレクトリは targets に列記しておく
+対象ディレクトリは mp4indexer.json にて指定する
 動画ファイルではフレームサイズや長さも登録する
 
 音声多重（含む二ヶ国語）の場合には、
@@ -60,6 +60,7 @@ class VideoData:
     @property
     def fourcc(self):
         """ビデオエンコーダ
+
         HEV1、AVC1、MPEGなど
         """
         return self.__fourcc
@@ -123,8 +124,23 @@ def get_video_info(fname: Path):
     return v_data
 
 
-def cleanup(p: Path, con: sqlite3.Connection, cur: sqlite3.Cursor):
-    pass
+def cleanup(con: sqlite3.Connection, cur: sqlite3.Cursor):
+    """DBのデータが示すファイルが存在するかどうかを確認し、存在しなければDBからレコードを削除する
+
+    Args:
+        con (sqlite3.Connection): _description_
+        cur (sqlite3.Cursor): _description_
+
+    """
+    SQL = "SELECT * FROM videolist"
+
+    res = cur.execute(SQL)
+    for r in res:
+        p = Path(r["directory"], r["filename"])
+        if p.exists():
+            continue
+        else:
+            print(p)
 
 
 def index_files(p: Path, con: sqlite3.Connection, cur: sqlite3.Cursor):
@@ -140,8 +156,10 @@ def index_files(p: Path, con: sqlite3.Connection, cur: sqlite3.Cursor):
             con.commit()
             continue
         f = f.absolute()
-        dirname = str(f.parent).replace("'", "''")
-        fname = f.name.replace("'", "''")
+        # dirname = str(f.parent).replace("'", "''")
+        dirname = str(f.parent)
+        # fname = f.name.replace("'", "''")
+        fname = f.name
         filetype = f.suffix.upper()[1:]
         timestamp = time.strftime(
             "%Y-%m-%d %H:%M:%S", time.localtime(f.stat().st_mtime)
@@ -182,7 +200,7 @@ def index_files(p: Path, con: sqlite3.Connection, cur: sqlite3.Cursor):
                     v_data.fourcc = "MPEG"
                 SQL = f"""INSERT INTO videolist VALUES ("{fname}", "{dirname}", "{filetype}",
                         {v_data.height}, {v_data.width}, "{play_length}",
-                        {f.stat().st_size}, "{v_data.fourcc}", "{timestamp}", "")
+                        {f.stat().st_size}, "{v_data.fourcc}", "{timestamp}", "", 0)
                     ON CONFLICT (directory, filename)
                     DO UPDATE SET height = {v_data.height}, width = {v_data.width},
                         length = "{play_length}", datetime = "{timestamp}", filesize = {f.stat().st_size}"""
@@ -214,7 +232,7 @@ def index_files(p: Path, con: sqlite3.Connection, cur: sqlite3.Cursor):
                 description = description.replace("'", "''").replace('"', '""')
                 SQL = f"""INSERT INTO videolist VALUES ("{fname}", "{dirname}", "{filetype}",
                         0, 0, "",
-                        {f.stat().st_size}, "", "{timestamp}", "{description}")
+                        {f.stat().st_size}, "", "{timestamp}", "{description}", 0)
                     ON CONFLICT(directory, filename)
                     DO UPDATE SET datetime = "{timestamp}", filesize = {f.stat().st_size}, description = "{description}"
                     """
@@ -228,7 +246,7 @@ def index_files(p: Path, con: sqlite3.Connection, cur: sqlite3.Cursor):
                 logger.info(f"unknown suffix : {f.parent}\\{fname}")
 
                 SQL = f"""INSERT INTO videolist VALUES ("{fname}", "{dirname}", "{filetype}",
-                    0, 0, "", {f.stat().st_size}, "", "{timestamp}", "")
+                    0, 0, "", {f.stat().st_size}, "", "{timestamp}", "", 0)
                     on conflict (directory, filename) do nothing"""
                 try:
                     cur.execute(SQL)
@@ -279,11 +297,12 @@ def create_table(cur):
 def main():
     # read target directories from json file.
     config = Path(environ["XDG_CONFIG_HOME"]) / "mp4indexer.json"
-    data_dir = Path(environ["XDG_DATA_HOME"]) / "mp4index"
+    db_name = Path("mp4index.db")
+    db_dir = Path(environ["XDG_DATA_HOME"]) / "mp4index"
+    db_path = db_dir / db_name
     # log_dir は $XDG_STATE_HOME が Ver.0.8から標準になった
     # $XDG_STATE_HOME がない場合は ~/.local/state が使われる
     log_dir = Path(environ["XDG_CACHE_HOME"])
-    db_name = Path("mp4index.db")
     target_dirs = []
     try:
         with open(config, encoding="utf-8") as f:
@@ -300,7 +319,7 @@ def main():
         try:
             db_path = Path(json_obj["db_path"])
         except IndexError:
-            db_path = data_dir
+            db_path = db_dir
         try:
             db_name = Path(json_obj["index_db"])
         except IndexError:
@@ -310,10 +329,10 @@ def main():
         except IndexError:
             log_file = Path("./mp4indexer.log")
 
-        if db_path:
-            db_file = db_path / db_name
-        else:
-            db_file = data_dir / db_name
+    if db_path:
+        db_file = db_path / db_name
+    else:
+        db_file = db_dir / db_name
 
     parser = argparse.ArgumentParser(
         description="MP4ファイルのインデックスデータベースを生成する",
@@ -336,6 +355,7 @@ def main():
         default=False,
         help="Clean up database",
     )
+    parser.add_argument("-D", "--DB", type=Path, help="specify database")
     parser.add_argument(
         "-d",
         "--debug",
@@ -356,6 +376,10 @@ def main():
     if args.debug:
         logger.setLevel(logging.DEBUG)
 
+    if args.DB:
+        logger.info(f"DB file: {args.DB}")
+        db_file = args.db
+
     logger.debug(target_dirs)
     conn = sqlite3.connect(db_file)
     conn.row_factory = sqlite3.Row
@@ -372,7 +396,7 @@ def main():
             logger.info("%s is not exist", p)
         else:
             if args.cleanup:
-                cleanup(p, conn, cur)
+                cleanup(conn, cur)
             else:
                 index_files(p, conn, cur)
 
