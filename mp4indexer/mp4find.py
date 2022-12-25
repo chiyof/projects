@@ -157,6 +157,14 @@ def main():
         nargs="+",
         help="specify codec type(s)",
     )
+    parser.add_argument(
+        "-r",
+        "--regexp",
+        action="store_const",
+        const=True,
+        default=False,
+        help="enable regexp search",
+    )
     parser.add_argument("-D", "--DB", type=str, help="specify database")
     parser.add_argument(
         "-d",
@@ -175,9 +183,9 @@ def main():
 
     logger.debug(args)
 
-    if args.db:
-        logger.info(f"DB file: {args.db}")
-        db_file = args.db
+    if args.DB:
+        logger.info(f"DB file: {args.DB}")
+        db_file = args.DB
 
     conn = sqlite3.connect(db_file)
     conn.enable_load_extension(True)
@@ -189,6 +197,7 @@ def main():
     else:
         color_console_enable()
         pat = compile_pattern(args.keyword[0])
+
         if args.type:
             for t in args.type:
                 # TODO: list of types support
