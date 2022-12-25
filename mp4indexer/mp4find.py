@@ -16,6 +16,7 @@ import sqlite3
 import json
 import re
 import logging
+from sys import exec_prefix
 from ctypes import windll, wintypes, byref
 from os import environ
 from pathlib import Path
@@ -56,7 +57,7 @@ def color_console_enable():
 
 
 def compile_pattern(S: str):
-    logger.info("Compiling pattern: %s", S)
+    logger.debug("Compiling pattern: %s", S)
     migemo = cmigemo.Migemo(migemo_dict)
     ret = migemo.query(S)
     logger.debug("regex = %s", ret)
@@ -76,7 +77,11 @@ def search_files(cur: sqlite3.Cursor, pattern: re.Pattern):
     # filesize    | INTEGER
     # datetime    | TEXT
     # description | TEXT
-    SQL = f"SELECT * FROM videolist WHERE filename LIKE '%{pattern.pattern}%' OR description LIKE '%{pattern.pattern}%'"
+    # keep        | INTEGER
+    SQL = f"""SELECT * FROM videolist 
+        WHERE filename REGEXP "{pattern.pattern}"
+        OR description LIKE "{pattern.pattern}"
+    """
     cur.execute(SQL)
     data = cur.fetchall()
     result = [dict(d) for d in data]
@@ -132,7 +137,7 @@ def main():
     parser.add_argument(
         "keyword",
         type=str,
-        nargs=1,
+        nargs="*",
         help="search word for search video files",
     )
     parser.add_argument(
@@ -143,6 +148,16 @@ def main():
         default=False,
         help="invert match",
     )
+    parser.add_argument("-q", "--query", type=str, help="SQL query")
+    parser.add_argument(
+        "-t",
+        "--type",
+        type=str,
+        action="append",
+        nargs="+",
+        help="specify codec type(s)",
+    )
+    parser.add_argument("-D", "--DB", type=str, help="specify database")
     parser.add_argument(
         "-d",
         "--debug",
@@ -156,15 +171,31 @@ def main():
 
     if args.debug:
         logger.setLevel(logging.DEBUG)
+        print(args)
 
     logger.debug(args)
-    color_console_enable()
-    pat = compile_pattern(args.keyword[0])
+
+    if args.db:
+        logger.info(f"DB file: {args.db}")
+        db_file = args.db
+
     conn = sqlite3.connect(db_file)
+    conn.enable_load_extension(True)
+    conn.load_extension(exec_prefix + "/DLLs/regexp.dll")
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
-    result = search_files(cur, pat)
-    pretty_print(result, pat)
+    if args.query:
+        pass
+    else:
+        color_console_enable()
+        pat = compile_pattern(args.keyword[0])
+        if args.type:
+            for t in args.type:
+                # TODO: list of types support
+                pass
+
+        result = search_files(cur, pat)
+        pretty_print(result, pat)
     conn.close()
 
 
