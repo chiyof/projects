@@ -91,6 +91,7 @@ def search_files(cur: sqlite3.Cursor, pattern: re.Pattern):
 
 def pretty_print(result: list, pat: re.Pattern):
     for item in result:
+        desc = []
         if res := pat.search(item["directory"]):
             dirname = pat.sub(BRIGHT_YELLOW + res.group() + DEFAULT, item["directory"])
         else:
@@ -99,9 +100,16 @@ def pretty_print(result: list, pat: re.Pattern):
             fname = pat.sub(BRIGHT_YELLOW + res.group() + DEFAULT, item["filename"])
         else:
             fname = item["filename"]
+        for line in item["description"].split("\n"):
+            if res := pat.search(line):
+                desc.append(pat.sub(BRIGHT_YELLOW + res.group() + DEFAULT, line))
+
         fsize = BRIGHT_BLUE + f'{item["width"]}x{item["height"]}' + DEFAULT
         dtime = BRIGHT_CYAN + item["datetime"] + DEFAULT
-        print(f'{dirname}\t"{fname}"\t{fsize}\t{dtime}')
+        print(f'"{dirname}\\{fname}"\t{fsize}\t{dtime}')
+        if desc:
+            for s in desc:
+                print(f"    {s}")
 
 
 def main():

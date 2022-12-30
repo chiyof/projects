@@ -134,13 +134,23 @@ def cleanup(con: sqlite3.Connection, cur: sqlite3.Cursor):
     """
     SQL = "SELECT * FROM videolist"
 
-    res = cur.execute(SQL)
+    # res = cur.execute(SQL) とすると、forループが最初のexecute()で終わる
+    # おそらく res が壊れるので、横着せずにfetchall()すること。
+    cur.execute(SQL)
+    res = cur.fetchall()
     for r in res:
         p = Path(r["directory"], r["filename"])
         if p.exists():
             continue
         else:
-            print(p)
+            logger.info(f"clean-up {p}")
+            SQL = f"""
+                delete from videolist
+                where directory="{r['directory']}"
+                and filename="{r['filename']}"
+            """
+            cur.execute(SQL)
+            con.commit()
 
 
 def index_files(p: Path, con: sqlite3.Connection, cur: sqlite3.Cursor):
@@ -390,13 +400,13 @@ def main():
     time_start = time.perf_counter()
     st = datetime.datetime.now()
 
-    for d in dirs:
-        p = Path(d)
-        if not p.exists():
-            logger.info("%s is not exist", p)
-        else:
-            if args.cleanup:
-                cleanup(conn, cur)
+    if args.cleanup:
+        cleanup(conn, cur)
+    else:
+        for d in dirs:
+            p = Path(d)
+            if not p.exists():
+                logger.info("%s is not exist", p)
             else:
                 index_files(p, conn, cur)
 
