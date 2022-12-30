@@ -58,8 +58,8 @@ def color_console_enable():
 
 def compile_pattern(S: str):
     logger.debug("Compiling pattern: %s", S)
-    migemo = cmigemo.Migemo(migemo_dict)
-    ret = migemo.query(S)
+    m = cmigemo.Migemo(migemo_dict)
+    ret = m.query(S)
     logger.debug("regex = %s", ret)
     # return ret
     return re.compile(ret, re.IGNORECASE)
@@ -80,7 +80,7 @@ def search_files(cur: sqlite3.Cursor, pattern: re.Pattern):
     # keep        | INTEGER
     SQL = f"""SELECT * FROM videolist 
         WHERE filename REGEXP "{pattern.pattern}"
-        OR description LIKE "{pattern.pattern}"
+        OR description REGEXP "{pattern.pattern}"
     """
     cur.execute(SQL)
     data = cur.fetchall()
