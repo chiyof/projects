@@ -162,7 +162,7 @@ def index_files(p: Path, con: sqlite3.Connection, cur: sqlite3.Cursor):
         target = p.glob("**/*")
     for f in target:
         if f.is_dir():
-            logger.info(f)
+            logger.debug(f)
             con.commit()
             continue
         f = f.absolute()
@@ -213,18 +213,8 @@ def index_files(p: Path, con: sqlite3.Connection, cur: sqlite3.Cursor):
                         {f.stat().st_size}, "{v_data.fourcc}", "{timestamp}", "", 0)
                     ON CONFLICT (directory, filename)
                     DO UPDATE SET height = {v_data.height}, width = {v_data.width},
-                        length = "{play_length}", datetime = "{timestamp}", filesize = {f.stat().st_size}"""
-                try:
-                    cur.execute(SQL)
-                except sqlite3.OperationalError as e:
-                    print(e)
-                    logger.error(SQL)
-                    exit(-1)
-                except sqlite3.ProgrammingError as e:
-                    print(e)
-                    logger.error(SQL)
-                    exit(-1)
-
+                        length = "{play_length}", datetime = "{timestamp}", filesize = {f.stat().st_size}
+                    """
             elif filetype in ["TXT"]:
                 logger.debug(f"updating {fname}")
                 try:
@@ -246,24 +236,26 @@ def index_files(p: Path, con: sqlite3.Connection, cur: sqlite3.Cursor):
                     ON CONFLICT(directory, filename)
                     DO UPDATE SET datetime = "{timestamp}", filesize = {f.stat().st_size}, description = "{description}"
                     """
-                try:
-                    cur.execute(SQL)
-                except sqlite3.OperationalError as e:
-                    print(e)
-                    logger.error(SQL)
-                    exit(-1)
             else:
                 logger.info(f"unknown suffix : {f.parent}\\{fname}")
 
                 SQL = f"""INSERT INTO videolist VALUES ("{fname}", "{dirname}", "{filetype}",
                     0, 0, "", {f.stat().st_size}, "", "{timestamp}", "", 0)
-                    on conflict (directory, filename) do nothing"""
-                try:
-                    cur.execute(SQL)
-                except sqlite3.OperationalError as e:
-                    print(e)
-                    logger.error(SQL)
-                    exit(-1)
+                    ON CONFLICT (directory, filename) DO NOTHING
+                    """
+
+            try:
+                cur.execute(SQL)
+            except sqlite3.OperationalError as e:
+                print(e)
+                logger.error(SQL)
+                exit(-1)
+            except sqlite3.ProgrammingError as e:
+                print(e)
+                logger.error(SQL)
+                exit(-1)
+            else:
+                logger.info(f"inserted {dirname}/{fname}")
 
 
 def create_table(cur):
@@ -312,37 +304,33 @@ def main():
     db_path = db_dir / db_name
     # log_dir は $XDG_STATE_HOME が Ver.0.8から標準になった
     # $XDG_STATE_HOME がない場合は ~/.local/state が使われる
-    log_dir = Path(environ["XDG_CACHE_HOME"])
+    log_dir = db_dir / "log"
+    log_path = log_dir / Path(time.strftime("mp4index-%Y-%m-%d.log"))
     target_dirs = []
     try:
         with open(config, encoding="utf-8") as f:
             json_obj = json.load(f)
     except FileNotFoundError:
         target_dirs = [Path.cwd()]
-        db_file = Path("./index-db.db")
-        log_file = Path("./mp4indexer.log")
+        db_path = Path("./index-db.db")
+        log_path = Path("./mp4indexer.log")
     else:
         try:
             target_dirs = json_obj["target_dirs"]
         except IndexError:
             target_dirs = [Path.cwd()]
         try:
-            db_path = Path(json_obj["db_path"])
-        except IndexError:
-            db_path = db_dir
-        try:
             db_name = Path(json_obj["index_db"])
         except IndexError:
             pass
         try:
-            log_file = log_dir / Path(json_obj["logfile"])
+            db_path = Path(json_obj["db_dir"]) / db_name
         except IndexError:
-            log_file = Path("./mp4indexer.log")
-
-    if db_path:
-        db_file = db_path / db_name
-    else:
-        db_file = db_dir / db_name
+            db_path = db_dir / db_name
+        try:
+            log_path = Path(json_obj["log_dir"]) / "mp4indexer.log"
+        except IndexError:
+            log_path = Path("./mp4indexer.log")
 
     parser = argparse.ArgumentParser(
         description="MP4ファイルのインデックスデータベースを生成する",
@@ -378,20 +366,20 @@ def main():
     args = parser.parse_args()
 
     # add log file handler to logger
-    handler = logging.FileHandler(log_file, encoding="utf-8")
+    fh = logging.FileHandler(log_path, encoding="utf-8")
     formatter = logging.Formatter("%(asctime)s %(name)-12s %(levelname)-8s %(message)s")
-    handler.setFormatter(formatter)
-    logger.addHandler(handler)
+    fh.setFormatter(formatter)
+    logger.addHandler(fh)
 
     if args.debug:
         logger.setLevel(logging.DEBUG)
 
     if args.DB:
         logger.info(f"DB file: {args.DB}")
-        db_file = args.db
+        db_path = args.db
 
     logger.debug(target_dirs)
-    conn = sqlite3.connect(db_file)
+    conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
     create_table(cur)

@@ -123,20 +123,16 @@ def main():
         with open(config, encoding="utf-8") as f:
             json_obj = json.load(f)
     except FileNotFoundError:
-        db_file = Path("./index-db.db")
+        db_path = Path("./index-db.db")
     else:
-        try:
-            db_path = Path(json_obj["db_path"])
-        except IndexError:
-            db_path = data_dir
         try:
             db_name = Path(json_obj["index_db"])
         except IndexError:
             pass
-        if db_path:
-            db_file = db_path / db_name
-        else:
-            db_file = data_dir / db_name
+        try:
+            db_path = Path(json_obj["db_dir"]) / db_name
+        except IndexError:
+            db_path = data_dir / db_name
 
     parser = argparse.ArgumentParser(
         description="MP4データベースからタイトルを検索する",
@@ -193,9 +189,9 @@ def main():
 
     if args.DB:
         logger.info(f"DB file: {args.DB}")
-        db_file = args.DB
+        db_path = args.DB
 
-    conn = sqlite3.connect(db_file)
+    conn = sqlite3.connect(db_path)
     conn.enable_load_extension(True)
     conn.load_extension(exec_prefix + "/DLLs/regexp.dll")
     conn.row_factory = sqlite3.Row
