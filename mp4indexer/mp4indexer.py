@@ -305,7 +305,7 @@ def main():
     # log_dir は $XDG_STATE_HOME が Ver.0.8から標準になった
     # $XDG_STATE_HOME がない場合は ~/.local/state が使われる
     log_dir = db_dir / "log"
-    log_path = log_dir / Path(time.strftime("mp4index-%Y-%m-%d.log"))
+    log_name = Path(time.strftime("mp4index-%Y-%m-%d.log"))
     target_dirs = []
     try:
         with open(config, encoding="utf-8") as f:
@@ -328,9 +328,9 @@ def main():
         except IndexError:
             db_path = db_dir / db_name
         try:
-            log_path = Path(json_obj["log_dir"]) / "mp4indexer.log"
+            log_path = Path(json_obj["log_dir"]) / log_name
         except IndexError:
-            log_path = Path("./mp4indexer.log")
+            log_path = log_dir / log_name
 
     parser = argparse.ArgumentParser(
         description="MP4ファイルのインデックスデータベースを生成する",
