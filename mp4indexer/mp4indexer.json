@@ -1,1 +1,20 @@
-C:/Users/kats/.config/mp4indexer.json
+{
+    "target_dirs": [
+        "m:/Videos/Animation",
+        "m:/Videos/Movies/アニメ",
+        "m:/Videos/Movies/オーシャンムービー",
+        "m:/Videos/Movies/ドキュメンタリ",
+        "m:/Videos/Movies/邦画",
+        "m:/Videos/Movies/洋画",
+        "m:/Videos/_new_coming/_DONE",
+        "m:/Videos/ドキュメンタリ",
+        "m:/Videos/ドラマ",
+        "m:/Videos/バラエティ",
+        "m:/Videos/紀行もの",
+        "m:/Videos/Music",
+        "m:/Videos/Movies/ＳＳＦＦ＆アジア"
+    ],
+    "db_dir": "M:/share/mp4index",
+    "index_db": "mp4index.db",
+    "log_dir": "M:/share/mp4index/log"
+}
