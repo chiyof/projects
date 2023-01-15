@@ -1,1 +1,8 @@
-C:/Users/kats/.config/publist.json
+{
+    "target_dirs": [
+        "p:/Software"
+    ],
+    "db_dir": "M:/share/publist",
+    "index_db": "publist.db",
+    "log_dir": "M:/share/publist/log"
+}
