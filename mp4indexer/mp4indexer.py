@@ -170,6 +170,7 @@ def index_files(p: Path, con: sqlite3.Connection, cur: sqlite3.Cursor):
         dirname = str(f.parent)
         # fname = f.name.replace("'", "''")
         fname = f.name
+        fsize = f.stat().st_size
         filetype = f.suffix.upper()[1:]
         timestamp = time.strftime(
             "%Y-%m-%d %H:%M:%S", time.localtime(f.stat().st_mtime)
@@ -210,10 +211,11 @@ def index_files(p: Path, con: sqlite3.Connection, cur: sqlite3.Cursor):
                     v_data.fourcc = "MPEG"
                 SQL = f"""INSERT INTO videolist VALUES ("{fname}", "{dirname}", "{filetype}",
                         {v_data.height}, {v_data.width}, "{play_length}",
-                        {f.stat().st_size}, "{v_data.fourcc}", "{timestamp}", "", 0)
+                        {fsize}, "{v_data.fourcc}", "{timestamp}", "", 0)
                     ON CONFLICT (directory, filename)
                     DO UPDATE SET height = {v_data.height}, width = {v_data.width},
-                        length = "{play_length}", datetime = "{timestamp}", filesize = {f.stat().st_size}
+                        length = "{play_length}", datetime = "{timestamp}", filesize = {fsize}
+                    RETURNING filename
                     """
             elif filetype in ["TXT"]:
                 logger.debug(f"updating {fname}")
@@ -232,16 +234,18 @@ def index_files(p: Path, con: sqlite3.Connection, cur: sqlite3.Cursor):
                 description = description.replace("'", "''").replace('"', '""')
                 SQL = f"""INSERT INTO videolist VALUES ("{fname}", "{dirname}", "{filetype}",
                         0, 0, "",
-                        {f.stat().st_size}, "", "{timestamp}", "{description}", 0)
+                        {fsize}, "", "{timestamp}", "{description}", 0)
                     ON CONFLICT(directory, filename)
                     DO UPDATE SET datetime = "{timestamp}", filesize = {f.stat().st_size}, description = "{description}"
+                    RETURNING filename
                     """
             else:
                 logger.info(f"unknown suffix : {f.parent}\\{fname}")
 
                 SQL = f"""INSERT INTO videolist VALUES ("{fname}", "{dirname}", "{filetype}",
-                    0, 0, "", {f.stat().st_size}, "", "{timestamp}", "", 0)
+                    0, 0, "", {fsize}, "", "{timestamp}", "", 0)
                     ON CONFLICT (directory, filename) DO NOTHING
+                    RETURNING *
                     """
 
             try:
@@ -255,7 +259,12 @@ def index_files(p: Path, con: sqlite3.Connection, cur: sqlite3.Cursor):
                 logger.error(SQL)
                 exit(-1)
             else:
-                logger.info(f"inserted {dirname}/{fname}")
+                res = cur.fetchall()
+                if res is None:
+                    logger.warn(f"insertion failed: {fname}")
+                else:
+                    logger.info(f"inserted {dirname}/{fname}")
+        con.commit()
 
 
 def create_table(cur):
@@ -376,7 +385,7 @@ def main():
 
     if args.DB:
         logger.info(f"DB file: {args.DB}")
-        db_path = args.db
+        db_path = args.DB
 
     logger.debug(target_dirs)
     conn = sqlite3.connect(db_path)
