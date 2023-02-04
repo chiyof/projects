@@ -5,7 +5,7 @@
 #
 # copyright (c) K.Fujii 2021,2022
 # created : Mar 7, 2021
-# last modified: Dec 25, 2022
+# last modified: Feb 4, 2023
 """
 mp4indexer.py:
 指定されたディレクトリからMP4ファイルの情報を収集してDBに登録する
@@ -18,7 +18,6 @@ mp4indexer.py:
 """
 
 import argparse
-import sqlite3
 import json
 import math
 import logging
@@ -28,6 +27,7 @@ from os import environ
 from pathlib import Path
 from subprocess import run
 
+import MySQLdb
 import cv2
 
 logger = logging.getLogger(__name__)
@@ -124,7 +124,7 @@ def get_video_info(fname: Path):
     return v_data
 
 
-def cleanup(con: sqlite3.Connection, cur: sqlite3.Cursor):
+def cleanup(conn: MySQLdb.Connection, cur, table_name: str):
     """DBのデータが示すファイルが存在するかどうかを確認し、存在しなければDBからレコードを削除する
 
     Args:
@@ -132,7 +132,7 @@ def cleanup(con: sqlite3.Connection, cur: sqlite3.Cursor):
         cur (sqlite3.Cursor): _description_
 
     """
-    SQL = "SELECT * FROM videolist"
+    SQL = f"SELECT * FROM {table_name}"
 
     # res = cur.execute(SQL) とすると、forループが最初のexecute()で終わる
     # おそらく res が壊れるので、横着せずにfetchall()すること。
@@ -145,15 +145,15 @@ def cleanup(con: sqlite3.Connection, cur: sqlite3.Cursor):
         else:
             logger.info(f"clean-up {p}")
             SQL = f"""
-                delete from videolist
+                delete from {table_name}
                 where directory="{r['directory']}"
                 and filename="{r['filename']}"
             """
             cur.execute(SQL)
-            con.commit()
+            conn.commit()
 
 
-def index_files(p: Path, con: sqlite3.Connection, cur: sqlite3.Cursor):
+def index_files(p: Path, conn: MySQLdb.Connection, cur, table_name: str):
     """Get video info from the video file using OpenCV"""
     v_data = VideoData()
     if p.is_file():
@@ -162,12 +162,12 @@ def index_files(p: Path, con: sqlite3.Connection, cur: sqlite3.Cursor):
         target = p.glob("**/*")
     for f in target:
         if f.is_dir():
-            logger.debug(f)
-            con.commit()
+            logger.info(f)
+            conn.commit()
             continue
         f = f.absolute()
         # dirname = str(f.parent).replace("'", "''")
-        dirname = str(f.parent)
+        dirname = f.parent.as_posix()
         # fname = f.name.replace("'", "''")
         fname = f.name
         fsize = f.stat().st_size
@@ -182,7 +182,7 @@ def index_files(p: Path, con: sqlite3.Connection, cur: sqlite3.Cursor):
             # 処理時間短縮のためデータベースにすでにあるかどうかを確認する
             cur.execute(
                 f"""
-                SELECT * FROM videolist WHERE filename="{fname}"
+                SELECT * FROM {table_name} WHERE filename="{fname}"
                     AND directory="{dirname}" AND datetime="{timestamp}"
                 """
             )
@@ -209,11 +209,11 @@ def index_files(p: Path, con: sqlite3.Connection, cur: sqlite3.Cursor):
                     play_length = 0
                 if filetype in ["M2TS", "M2T", "TS", "MPG"]:
                     v_data.fourcc = "MPEG"
-                SQL = f"""INSERT INTO videolist VALUES ("{fname}", "{dirname}", "{filetype}",
+                SQL = f"""INSERT INTO {table_name} VALUES ("{fname}", "{dirname}", "{filetype}",
                         {v_data.height}, {v_data.width}, "{play_length}",
                         {fsize}, "{v_data.fourcc}", "{timestamp}", "", 0)
-                    ON CONFLICT (directory, filename)
-                    DO UPDATE SET height = {v_data.height}, width = {v_data.width},
+                    ON DUPLICATE KEY
+                    UPDATE height = {v_data.height}, width = {v_data.width},
                         length = "{play_length}", datetime = "{timestamp}", filesize = {fsize}
                     RETURNING filename
                     """
@@ -232,29 +232,30 @@ def index_files(p: Path, con: sqlite3.Connection, cur: sqlite3.Cursor):
                     logger.debug("output: {}".format(res.stderr.decode()))
                     description = f.read_text(encoding="utf-8")
                 description = description.replace("'", "''").replace('"', '""')
-                SQL = f"""INSERT INTO videolist VALUES ("{fname}", "{dirname}", "{filetype}",
+                SQL = f"""INSERT INTO {table_name} VALUES ("{fname}", "{dirname}", "{filetype}",
                         0, 0, "",
                         {fsize}, "", "{timestamp}", "{description}", 0)
-                    ON CONFLICT(directory, filename)
-                    DO UPDATE SET datetime = "{timestamp}", filesize = {f.stat().st_size}, description = "{description}"
+                    ON DUPLICATE KEY
+                    UPDATE datetime = "{timestamp}", filesize = {f.stat().st_size}, description = "{description}"
                     RETURNING filename
                     """
             else:
                 logger.info(f"unknown suffix : {f.parent}\\{fname}")
 
-                SQL = f"""INSERT INTO videolist VALUES ("{fname}", "{dirname}", "{filetype}",
+                SQL = f"""INSERT INTO {table_name} VALUES ("{fname}", "{dirname}", "{filetype}",
                     0, 0, "", {fsize}, "", "{timestamp}", "", 0)
-                    ON CONFLICT (directory, filename) DO NOTHING
+                    ON DUPLICATE KEY
+                    UPDATE filename = filename
                     RETURNING *
                     """
 
             try:
                 cur.execute(SQL)
-            except sqlite3.OperationalError as e:
+            except MySQLdb.OperationalError as e:
                 print(e)
                 logger.error(SQL)
                 exit(-1)
-            except sqlite3.ProgrammingError as e:
+            except MySQLdb.ProgrammingError as e:
                 print(e)
                 logger.error(SQL)
                 exit(-1)
@@ -263,11 +264,11 @@ def index_files(p: Path, con: sqlite3.Connection, cur: sqlite3.Cursor):
                 if res is None:
                     logger.warn(f"insertion failed: {fname}")
                 else:
-                    logger.info(f"inserted {dirname}/{fname}")
-        con.commit()
+                    logger.debug(f"inserted {dirname}/{fname}")
+        conn.commit()
 
 
-def create_table(cur):
+def create_table(cur, table_name: str):
     # talbe videolist
     # ----------------------
     # filename    | TEXT
@@ -283,23 +284,23 @@ def create_table(cur):
     # description | TEXT
     try:
         cur.execute(
-            """
-            CREATE TABLE IF NOT EXISTS videolist (
-                filename TEXT NOT NULL,
-                directory TEXT NOT NULL,
-                filetype TEXT NOT NULL DEFAULT "",
-                height INTEGER NOT NULL DEFAULT 0,
-                width INTEGER NOT NULL DEFAULT 0,
-                length TEXT DEFAULT "",
-                filesize INTEGER NOT NULL DEFAULT 0,
-                fourcc TEXT DEFAULT "",
-                datetime TEXT DEFAULT "",
+            f"""
+            CREATE TABLE IF NOT EXISTS {table_name} (
+                filename varchar(256) NOT NULL,
+                directory varchar(256) NOT NULL,
+                filetype char(8) NOT NULL DEFAULT "",
+                height INT unsigned NOT NULL DEFAULT 0,
+                width INT unsigned NOT NULL DEFAULT 0,
+                length char(8) DEFAULT "",
+                filesize bigint unsigned NOT NULL DEFAULT 0,
+                fourcc CHAR(4) DEFAULT "",
+                datetime timestamp default 0,
                 description TEXT DEFAULT "",
-                keep INTEGER,
-                PRIMARY KEY (directory, filename))
+                keep tinyint default 0,
+            PRIMARY KEY (directory, filename))
             """
         )
-    except sqlite3.OperationalError:
+    except MySQLdb.OperationalError:
         # すでにTABLEがある
         pass
     return
@@ -307,39 +308,30 @@ def create_table(cur):
 
 def main():
     # read target directories from json file.
-    config = Path(environ["XDG_CONFIG_HOME"]) / "mp4indexer.json"
-    db_name = Path("mp4index.db")
-    db_dir = Path(environ["XDG_DATA_HOME"]) / "mp4index"
-    db_path = db_dir / db_name
+    config = {}
+    config_file = Path(environ["XDG_CONFIG_HOME"]) / "mp4indexer.json"
+    try:
+        with open(config_file, encoding="utf-8") as f:
+            config = json.load(f)
+    except FileNotFoundError:
+        pass
+    if (db_host := config.get("db_host")) is None:
+        db_host = "192.168.10.4"
+    if (db_user := config.get("db_user")) is None:
+        db_user = "kats"
+    if (db_pass := config.get("db_pass")) is None:
+        db_pass = "sanadamitsuki"
+    if (target_dirs := config.get("target_dirs")) is None:
+        target_dirs = [Path.cwd()]
+    if (log_dir := config.get("log_dir")) is None:
+        log_dir = environ["XDG_DATA_HOME"] + "/mp4indexer"
+    if (db_name := config.get("db_name")) is None:
+        db_name = "mp4index.db"
+    if (table_name := config.get("table_name")) is None:
+        table_name = "videolist"
     # log_dir は $XDG_STATE_HOME が Ver.0.8から標準になった
     # $XDG_STATE_HOME がない場合は ~/.local/state が使われる
-    log_dir = db_dir / "log"
-    log_name = Path(time.strftime("mp4index-%Y-%m-%d.log"))
-    target_dirs = []
-    try:
-        with open(config, encoding="utf-8") as f:
-            json_obj = json.load(f)
-    except FileNotFoundError:
-        target_dirs = [Path.cwd()]
-        db_path = Path("./index-db.db")
-        log_path = Path("./mp4indexer.log")
-    else:
-        try:
-            target_dirs = json_obj["target_dirs"]
-        except IndexError:
-            target_dirs = [Path.cwd()]
-        try:
-            db_name = Path(json_obj["index_db"])
-        except IndexError:
-            pass
-        try:
-            db_path = Path(json_obj["db_dir"]) / db_name
-        except IndexError:
-            db_path = db_dir / db_name
-        try:
-            log_path = Path(json_obj["log_dir"]) / log_name
-        except IndexError:
-            log_path = log_dir / log_name
+    log_name = Path(log_dir).joinpath(time.strftime("mp4index-%Y-%m-%d.log"))
 
     parser = argparse.ArgumentParser(
         description="MP4ファイルのインデックスデータベースを生成する",
@@ -375,7 +367,7 @@ def main():
     args = parser.parse_args()
 
     # add log file handler to logger
-    fh = logging.FileHandler(log_path, encoding="utf-8")
+    fh = logging.FileHandler(log_name, encoding="utf-8")
     formatter = logging.Formatter("%(asctime)s %(name)-12s %(levelname)-8s %(message)s")
     fh.setFormatter(formatter)
     logger.addHandler(fh)
@@ -384,28 +376,29 @@ def main():
         logger.setLevel(logging.DEBUG)
 
     if args.DB:
-        logger.info(f"DB file: {args.DB}")
-        db_path = args.DB
+        logger.info(f"DB name: {args.DB}")
+        db_name = args.DB
 
     logger.debug(target_dirs)
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
+    conn = MySQLdb.connect(
+        host=db_host, user=db_user, password=db_pass, database=db_name
+    )
     cur = conn.cursor()
-    create_table(cur)
+    create_table(cur, table_name)
 
     dirs = args.directories
     time_start = time.perf_counter()
     st = datetime.datetime.now()
 
     if args.cleanup:
-        cleanup(conn, cur)
+        cleanup(conn, cur, table_name)
     else:
         for d in dirs:
             p = Path(d)
             if not p.exists():
                 logger.info("%s is not exist", p)
             else:
-                index_files(p, conn, cur)
+                index_files(p, conn, cur, table_name)
 
     time_end = time.perf_counter()
     time_diff = time_end - time_start

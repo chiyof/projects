@@ -5,14 +5,13 @@
 #
 # copyright (c) K.Fujii 2021,2022
 # created : Mar 7, 2021
-# last modified: Dec 24, 2022
+# last modified: Feb 4, 2023
 """
 mp4find.py:
 データベースからMP4ファイルを検索する
 """
 
 import argparse
-import sqlite3
 import json
 import re
 import logging
@@ -20,8 +19,10 @@ from sys import exec_prefix
 from ctypes import windll, wintypes, byref
 from os import environ
 from pathlib import Path
+from datetime import datetime
 
 import cmigemo
+import MySQLdb
 
 
 migemo_dict = "c:/Apps/bin/dict/base-dict"
@@ -65,7 +66,7 @@ def compile_pattern(S: str):
     return re.compile(ret, re.IGNORECASE)
 
 
-def search_files(cur: sqlite3.Cursor, pattern: re.Pattern, text: bool):
+def search_files(cur, table_name: str, pattern: re.Pattern, text: bool):
     # talbe videolist
     # ----------------------
     # filename    | TEXT
@@ -78,7 +79,7 @@ def search_files(cur: sqlite3.Cursor, pattern: re.Pattern, text: bool):
     # datetime    | TEXT
     # description | TEXT
     # keep        | INTEGER
-    SQL = f"""SELECT * FROM videolist
+    SQL = f"""SELECT * FROM {table_name}
         WHERE (filename REGEXP "{pattern.pattern}"
         OR description REGEXP "{pattern.pattern}")
     """
@@ -89,6 +90,15 @@ def search_files(cur: sqlite3.Cursor, pattern: re.Pattern, text: bool):
     result = [dict(d) for d in data]
     logger.debug(result)
     return result
+
+
+def dict_to_datetime(timestamp: dict) -> datetime:
+    dt = datetime(
+        year=timestamp.get("year"),
+        month=timestamp.get("month"),
+        day=timestamp.get("day"),
+    )
+    return dt
 
 
 def pretty_print(result: list, pat: re.Pattern):
@@ -105,10 +115,9 @@ def pretty_print(result: list, pat: re.Pattern):
         for line in item["description"].split("\n"):
             if res := pat.search(line):
                 desc.append(pat.sub(BRIGHT_YELLOW + res.group() + DEFAULT, line))
-
         fsize = BRIGHT_BLUE + f'{item["width"]}x{item["height"]}' + DEFAULT
-        dtime = BRIGHT_CYAN + item["datetime"] + DEFAULT
-        print(f'"{dirname}\\{fname}"\t{fsize}\t{dtime}')
+        dtime = item["datetime"].strftime("%Y-%m-%d %H:%M:%S")
+        print(f'"{dirname}/{fname}"\t{fsize}\t{dtime}')
         if desc:
             for s in desc:
                 print(f"    {s}")
@@ -116,25 +125,23 @@ def pretty_print(result: list, pat: re.Pattern):
 
 def main():
     # read target directories from json file.
-    config = Path(environ["XDG_CONFIG_HOME"]) / "mp4indexer.json"
-    data_dir = Path(environ["XDG_DATA_HOME"]) / "mp4index"
-    # log_dir は $XDG_STATE_HOME が Ver.0.8から標準になった
-    # $XDG_STATE_HOME がない場合は ~/.local/state が使われる
-    db_name = Path("mp4index.db")
+    config = {}
+    config_file = Path(environ["XDG_CONFIG_HOME"]) / "mp4indexer.json"
     try:
-        with open(config, encoding="utf-8") as f:
-            json_obj = json.load(f)
+        with open(config_file, encoding="utf-8") as f:
+            config = json.load(f)
     except FileNotFoundError:
-        db_path = Path("./index-db.db")
-    else:
-        try:
-            db_name = Path(json_obj["index_db"])
-        except IndexError:
-            pass
-        try:
-            db_path = Path(json_obj["db_dir"]) / db_name
-        except IndexError:
-            db_path = data_dir / db_name
+        pass
+    if (db_host := config.get("db_host")) is None:
+        db_host = "192.168.10.4"
+    if (db_user := config.get("db_user")) is None:
+        db_user = "kats"
+    if (db_pass := config.get("db_pass")) is None:
+        db_pass = "sanadamitsuki"
+    if (db_name := config.get("db_name")) is None:
+        db_name = "mp4index.db"
+    if (table_name := config.get("table_name")) is None:
+        table_name = "videolist"
 
     parser = argparse.ArgumentParser(
         description="MP4データベースからタイトルを検索する",
@@ -190,14 +197,11 @@ def main():
     logger.debug(args)
 
     if args.DB:
-        logger.info(f"DB file: {args.DB}")
-        db_path = args.DB
+        logger.info(f"DB name: {args.DB}")
+        db_name = args.DB
 
-    conn = sqlite3.connect(db_path)
-    conn.enable_load_extension(True)
-    conn.load_extension(exec_prefix + "/DLLs/regexp.dll")
-    conn.row_factory = sqlite3.Row
-    cur = conn.cursor()
+    conn = MySQLdb.connect(host=db_host, user=db_user, passwd=db_pass, database=db_name)
+    cur = conn.cursor(MySQLdb.cursors.DictCursor)
     if args.query:
         pass
     else:
@@ -209,7 +213,7 @@ def main():
                 # TODO: list of types support
                 pass
 
-        result = search_files(cur, pat, args.text)
+        result = search_files(cur, table_name, pat, args.text)
         pretty_print(result, pat)
     conn.close()
 

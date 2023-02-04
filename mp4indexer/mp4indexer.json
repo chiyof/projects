@@ -14,7 +14,11 @@
         "m:/Videos/Music",
         "m:/Videos/Movies/ＳＳＦＦ＆アジア"
     ],
+    "db_host": "192.168.10.4",
+    "db_user": "kats",
+    "db_pass": "sanadamitsuki",
     "db_dir": "M:/share/mp4index",
-    "index_db": "mp4index.db",
+    "db_name": "mp4index.db",
+    "table_name": "videolist",
     "log_dir": "M:/share/mp4index/log"
 }
