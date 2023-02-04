@@ -65,7 +65,7 @@ def compile_pattern(S: str):
     return re.compile(ret, re.IGNORECASE)
 
 
-def search_files(cur: sqlite3.Cursor, pattern: re.Pattern):
+def search_files(cur: sqlite3.Cursor, pattern: re.Pattern, text: bool):
     # talbe videolist
     # ----------------------
     # filename    | TEXT
@@ -78,10 +78,12 @@ def search_files(cur: sqlite3.Cursor, pattern: re.Pattern):
     # datetime    | TEXT
     # description | TEXT
     # keep        | INTEGER
-    SQL = f"""SELECT * FROM videolist 
-        WHERE filename REGEXP "{pattern.pattern}"
-        OR description REGEXP "{pattern.pattern}"
+    SQL = f"""SELECT * FROM videolist
+        WHERE (filename REGEXP "{pattern.pattern}"
+        OR description REGEXP "{pattern.pattern}")
     """
+    if not text:
+        SQL += """ AND (filetype="MP4" OR filetype="M2TS")"""
     cur.execute(SQL)
     data = cur.fetchall()
     result = [dict(d) for d in data]
@@ -145,17 +147,17 @@ def main():
         help="search word for search video files",
     )
     parser.add_argument(
-        "-v",
-        "--invert",
+        "-t",
+        "--text",
         action="store_const",
         const=True,
         default=False,
-        help="invert match",
+        help="also search into text files",
     )
     parser.add_argument("-q", "--query", type=str, help="SQL query")
     parser.add_argument(
-        "-t",
-        "--type",
+        "-c",
+        "--codec",
         type=str,
         action="append",
         nargs="+",
@@ -202,12 +204,12 @@ def main():
         color_console_enable()
         pat = compile_pattern(args.keyword[0])
 
-        if args.type:
-            for t in args.type:
+        if args.codec:
+            for t in args.codec:
                 # TODO: list of types support
                 pass
 
-        result = search_files(cur, pat)
+        result = search_files(cur, pat, args.text)
         pretty_print(result, pat)
     conn.close()
 
