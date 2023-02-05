@@ -20,6 +20,7 @@ from ctypes import windll, wintypes, byref
 from os import environ
 from pathlib import Path
 from datetime import datetime
+from shutil import disk_usage
 
 import cmigemo
 import MySQLdb
@@ -67,38 +68,22 @@ def compile_pattern(S: str):
 
 
 def search_files(cur, table_name: str, pattern: re.Pattern, text: bool):
-    # talbe videolist
-    # ----------------------
-    # filename    | TEXT
-    # directory   | TEXT
-    # filetype    | TEXT
-    # height      | INTEGER
-    # width       | INTEGER
-    # length      | TEXT
-    # filesize    | INTEGER
-    # datetime    | TEXT
-    # description | TEXT
-    # keep        | INTEGER
-    SQL = f"""SELECT * FROM {table_name}
-        WHERE (filename REGEXP "{pattern.pattern}"
-        OR description REGEXP "{pattern.pattern}")
-    """
+    # TODO: check REGEXP perfomance
+    SQL = f"SELECT * FROM {table_name}"
     if not text:
-        SQL += """ AND (filetype="MP4" OR filetype="M2TS")"""
+        SQL += f"""
+            WHERE (filetype="MP4" OR filetype="M2TS")
+            AND CONCAT(directory, filename) REGEXP "{pattern.pattern}"
+        """
+    else:
+        SQL = f"""
+            WHERE CONCAT(directory, filename, description) REGEXP "{pattern.pattern}"
+        """
     cur.execute(SQL)
     data = cur.fetchall()
     result = [dict(d) for d in data]
     logger.debug(result)
     return result
-
-
-def dict_to_datetime(timestamp: dict) -> datetime:
-    dt = datetime(
-        year=timestamp.get("year"),
-        month=timestamp.get("month"),
-        day=timestamp.get("day"),
-    )
-    return dt
 
 
 def pretty_print(result: list, pat: re.Pattern):
@@ -121,6 +106,16 @@ def pretty_print(result: list, pat: re.Pattern):
         if desc:
             for s in desc:
                 print(f"    {s}")
+
+
+def show_disk_info(drive: str):
+    (total, used, free) = disk_usage(drive)
+    free_tb = free / 1024**4
+    used_percent = used / total * 100
+    print(
+        f"""\ndrive {drive.upper()} {str.format("{:.2f}", free_tb)}TB free"""
+        f""" ({str.format("{:.1f}",used_percent)}% used)"""
+    )
 
 
 def main():
@@ -215,6 +210,7 @@ def main():
 
         result = search_files(cur, table_name, pat, args.text)
         pretty_print(result, pat)
+        show_disk_info("m:")
     conn.close()
 
 

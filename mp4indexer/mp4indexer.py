@@ -271,23 +271,23 @@ def index_files(p: Path, conn: MySQLdb.Connection, cur, table_name: str):
 def create_table(cur, table_name: str):
     # talbe videolist
     # ----------------------
-    # filename    | TEXT
-    # directory   | TEXT
-    # filetype    | TEXT
-    # height      | INTEGER
-    # width       | INTEGER
-    # length      | TEXT
-    # filesize    | INTEGER
-    # fourcc      | TEXT
-    # datetime    | TEXT
-    # keep        | INTEGER
+    # filename    | VARCHAR(255)
+    # directory   | VARCHAR(255)
+    # filetype    | CHAR(8)
+    # height      | INT UNSIGNED
+    # width       | INT UNSIGNED
+    # length      | CHAR(8)
+    # filesize    | BIGINT
+    # fourcc      | CHAR(4)
+    # datetime    | TIMESTAMP
     # description | TEXT
+    # keep        | TINYINT
     try:
         cur.execute(
             f"""
             CREATE TABLE IF NOT EXISTS {table_name} (
-                filename varchar(256) NOT NULL,
-                directory varchar(256) NOT NULL,
+                filename varchar(255) NOT NULL,
+                directory varchar(255) NOT NULL,
                 filetype char(8) NOT NULL DEFAULT "",
                 height INT unsigned NOT NULL DEFAULT 0,
                 width INT unsigned NOT NULL DEFAULT 0,
@@ -383,7 +383,7 @@ def main():
     conn = MySQLdb.connect(
         host=db_host, user=db_user, password=db_pass, database=db_name
     )
-    cur = conn.cursor()
+    cur = conn.cursor(MySQLdb.cursors.DictCursor)
     create_table(cur, table_name)
 
     dirs = args.directories
