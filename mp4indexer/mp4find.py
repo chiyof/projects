@@ -101,8 +101,9 @@ def pretty_print(result: list, pat: re.Pattern):
             if res := pat.search(line):
                 desc.append(pat.sub(BRIGHT_YELLOW + res.group() + DEFAULT, line))
         fsize = BRIGHT_BLUE + f'{item["width"]}x{item["height"]}' + DEFAULT
+        length = f'{item["length"]}'
         dtime = item["datetime"].strftime("%Y-%m-%d %H:%M:%S")
-        print(f'"{dirname}/{fname}"\t{fsize}\t{dtime}')
+        print(f'"{dirname}/{fname}"\t{fsize}\t{length}\t{dtime}')
         if desc:
             for s in desc:
                 print(f"    {s}")

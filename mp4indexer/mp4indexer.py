@@ -162,7 +162,7 @@ def index_files(p: Path, conn: MySQLdb.Connection, cur, table_name: str):
         target = p.glob("**/*")
     for f in target:
         if f.is_dir():
-            logger.info(f)
+            logger.debug(f)
             conn.commit()
             continue
         f = f.absolute()
@@ -209,7 +209,11 @@ def index_files(p: Path, conn: MySQLdb.Connection, cur, table_name: str):
                     play_length = 0
                 if filetype in ["M2TS", "M2T", "TS", "MPG"]:
                     v_data.fourcc = "MPEG"
-                SQL = f"""INSERT INTO {table_name} VALUES ("{fname}", "{dirname}", "{filetype}",
+                SQL = f"""
+                    INSERT INTO {table_name} 
+                        (filename, directory, filetype, height, width,
+                         length, filesize, fourcc, datetiem, description, keep)
+                    VALUES ("{fname}", "{dirname}", "{filetype}",
                         {v_data.height}, {v_data.width}, "{play_length}",
                         {fsize}, "{v_data.fourcc}", "{timestamp}", "", 0)
                     ON DUPLICATE KEY
