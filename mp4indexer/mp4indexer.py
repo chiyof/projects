@@ -124,7 +124,39 @@ def get_video_info(fname: Path):
     return v_data
 
 
-def cleanup(conn: MySQLdb.Connection, cur, table_name: str):
+def remove(conn: MySQLdb.Connection, cur, tablename: str):
+    """DBのデータから keep == 2 のレコードを検索し、ファイルが実在すれば削除する
+
+    Args:
+        con (sqlite3.Connection): _description_
+        cur (sqlite3.Cursor): _description_
+
+    """
+    count = 0
+    SQL = f"SELECT * FROM {tablename} WHERE filtype='M2TS' and keep=2"
+
+    cur.execute(SQL)
+    res = cur.fetchall()
+    for r in res:
+        if r.keep == 2:
+            p = Path(r["directory"], r["filename"])
+            if p.exists():
+                Path.unlink(p, missing_ok=True)
+                count += 1
+                logger.info(f"removed : {p}")
+            else:
+                logger.warn(f"remove: {p} does not exist")
+            SQL = f"""
+                delete from {tablename}
+                where directory="{r['directory']}"
+                and filename="{r['filename']}"
+            """
+            cur.execute(SQL)
+            conn.commit()
+    return count
+
+
+def cleanup(conn: MySQLdb.Connection, cur, tablename: str):
     """DBのデータが示すファイルが存在するかどうかを確認し、存在しなければDBからレコードを削除する
 
     Args:
@@ -132,7 +164,8 @@ def cleanup(conn: MySQLdb.Connection, cur, table_name: str):
         cur (sqlite3.Cursor): _description_
 
     """
-    SQL = f"SELECT * FROM {table_name}"
+    count = 0
+    SQL = f"SELECT * FROM {tablename}"
 
     # res = cur.execute(SQL) とすると、forループが最初のexecute()で終わる
     # おそらく res が壊れるので、横着せずにfetchall()すること。
@@ -145,15 +178,17 @@ def cleanup(conn: MySQLdb.Connection, cur, table_name: str):
         else:
             logger.info(f"clean-up {p}")
             SQL = f"""
-                delete from {table_name}
+                delete from {tablename}
                 where directory="{r['directory']}"
                 and filename="{r['filename']}"
             """
+            count += 1
             cur.execute(SQL)
             conn.commit()
+    return count
 
 
-def index_files(p: Path, conn: MySQLdb.Connection, cur, table_name: str):
+def index_files(p: Path, conn: MySQLdb.Connection, cur, tablename: str):
     """Get video info from the video file using OpenCV"""
     v_data = VideoData()
     if p.is_file():
@@ -182,7 +217,7 @@ def index_files(p: Path, conn: MySQLdb.Connection, cur, table_name: str):
             # 処理時間短縮のためデータベースにすでにあるかどうかを確認する
             cur.execute(
                 f"""
-                SELECT * FROM {table_name} WHERE filename="{fname}"
+                SELECT * FROM {tablename} WHERE filename="{fname}"
                     AND directory="{dirname}" AND datetime="{timestamp}"
                 """
             )
@@ -210,7 +245,7 @@ def index_files(p: Path, conn: MySQLdb.Connection, cur, table_name: str):
                 if filetype in ["M2TS", "M2T", "TS", "MPG"]:
                     v_data.fourcc = "MPEG"
                 SQL = f"""
-                    INSERT INTO {table_name} 
+                    INSERT INTO {tablename} 
                         (filename, directory, filetype, height, width,
                          length, filesize, fourcc, datetiem, description, keep)
                     VALUES ("{fname}", "{dirname}", "{filetype}",
@@ -236,7 +271,7 @@ def index_files(p: Path, conn: MySQLdb.Connection, cur, table_name: str):
                     logger.debug("output: {}".format(res.stderr.decode()))
                     description = f.read_text(encoding="utf-8")
                 description = description.replace("'", "''").replace('"', '""')
-                SQL = f"""INSERT INTO {table_name} VALUES ("{fname}", "{dirname}", "{filetype}",
+                SQL = f"""INSERT INTO {tablename} VALUES ("{fname}", "{dirname}", "{filetype}",
                         0, 0, "",
                         {fsize}, "", "{timestamp}", "{description}", 0)
                     ON DUPLICATE KEY
@@ -246,7 +281,7 @@ def index_files(p: Path, conn: MySQLdb.Connection, cur, table_name: str):
             else:
                 logger.info(f"unknown suffix : {f.parent}\\{fname}")
 
-                SQL = f"""INSERT INTO {table_name} VALUES ("{fname}", "{dirname}", "{filetype}",
+                SQL = f"""INSERT INTO {tablename} VALUES ("{fname}", "{dirname}", "{filetype}",
                     0, 0, "", {fsize}, "", "{timestamp}", "", 0)
                     ON DUPLICATE KEY
                     UPDATE filename = filename
@@ -272,7 +307,7 @@ def index_files(p: Path, conn: MySQLdb.Connection, cur, table_name: str):
         conn.commit()
 
 
-def create_table(cur, table_name: str):
+def create_table(cur, tablename: str):
     # talbe videolist
     # ----------------------
     # filename    | VARCHAR(255)
@@ -285,11 +320,11 @@ def create_table(cur, table_name: str):
     # fourcc      | CHAR(4)
     # datetime    | TIMESTAMP
     # description | TEXT
-    # keep        | TINYINT
+    # keep        | TINYINT (0: default, 1: keep, 2: remove)
     try:
         cur.execute(
             f"""
-            CREATE TABLE IF NOT EXISTS {table_name} (
+            CREATE TABLE IF NOT EXISTS {tablename} (
                 filename varchar(255) NOT NULL,
                 directory varchar(255) NOT NULL,
                 filetype char(8) NOT NULL DEFAULT "",
@@ -331,8 +366,8 @@ def main():
         log_dir = environ["XDG_DATA_HOME"] + "/mp4indexer"
     if (db_name := config.get("db_name")) is None:
         db_name = "mp4index.db"
-    if (table_name := config.get("table_name")) is None:
-        table_name = "videolist"
+    if (tablename := config.get("table_name")) is None:
+        tablename = "videolist"
     # log_dir は $XDG_STATE_HOME が Ver.0.8から標準になった
     # $XDG_STATE_HOME がない場合は ~/.local/state が使われる
     log_name = Path(log_dir).joinpath(time.strftime("mp4index-%Y-%m-%d.log"))
@@ -359,6 +394,14 @@ def main():
         help="Clean up database",
     )
     parser.add_argument("-D", "--DB", type=Path, help="specify database")
+    parser.add_argument(
+        "-r",
+        "--remove",
+        action="store_true",
+        const=True,
+        default=False,
+        help="remove video files of which 'keep' flag is 2",
+    )
     parser.add_argument(
         "-d",
         "--debug",
@@ -388,21 +431,25 @@ def main():
         host=db_host, user=db_user, password=db_pass, database=db_name
     )
     cur = conn.cursor(MySQLdb.cursors.DictCursor)
-    create_table(cur, table_name)
+    create_table(cur, tablename)
 
     dirs = args.directories
     time_start = time.perf_counter()
     st = datetime.datetime.now()
 
     if args.cleanup:
-        cleanup(conn, cur, table_name)
+        result = cleanup(conn, cur, tablename)
+        logger.info(f"{result} records were deleted.")
+    elif args.remove:
+        result = remove(conn, cur, tablename)
+        logger.info(f"{result} files were removed.")
     else:
         for d in dirs:
             p = Path(d)
             if not p.exists():
                 logger.info("%s is not exist", p)
             else:
-                index_files(p, conn, cur, table_name)
+                index_files(p, conn, cur, tablename)
 
     time_end = time.perf_counter()
     time_diff = time_end - time_start
