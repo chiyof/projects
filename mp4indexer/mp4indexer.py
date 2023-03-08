@@ -388,8 +388,7 @@ def main():
     parser.add_argument(
         "-c",
         "--cleanup",
-        action="store_const",
-        const=True,
+        action="store_true",
         default=False,
         help="Clean up database",
     )
@@ -398,16 +397,13 @@ def main():
         "-r",
         "--remove",
         action="store_true",
-        const=True,
         default=False,
         help="remove video files of which 'keep' flag is 2",
     )
     parser.add_argument(
         "-d",
         "--debug",
-        metavar="debug",
-        action="store_const",
-        const=True,
+        action="store_true",
         default=False,
         help="Print Debug information",
     )
