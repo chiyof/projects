@@ -1,0 +1,4 @@
+colorama==0.4.6
+loremipsum==1.0.5
+psycopg2==2.9.5
+tqdm==4.65.0
