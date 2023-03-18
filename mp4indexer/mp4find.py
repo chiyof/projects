@@ -15,12 +15,13 @@ import argparse
 import json
 import re
 import logging
-from sys import exec_prefix
+import time
 from ctypes import windll, wintypes, byref
 from os import environ
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timedelta
 from shutil import disk_usage
+from typing import List
 
 import cmigemo
 import MySQLdb
@@ -67,18 +68,27 @@ def compile_pattern(S: str):
     return re.compile(ret, re.IGNORECASE)
 
 
-def search_files(cur, table_name: str, pattern: re.Pattern, text: bool):
+def search_files(cur, table_name: str, patterns: list, text: bool, regexp: bool):
     # TODO: check REGEXP perfomance
-    SQL = f"SELECT * FROM {table_name}"
-    if not text:
-        SQL += f"""
-            WHERE (filetype="MP4" OR filetype="M2TS")
-            AND CONCAT(directory, filename) REGEXP "{pattern.pattern}"
-        """
+
+    if text:
+        SEARCH_COLUMNS = """ CONCAT_WS(" ", directory, filename, description)"""
     else:
-        SQL = f"""
-            WHERE CONCAT(directory, filename, description) REGEXP "{pattern.pattern}"
-        """
+        SEARCH_COLUMNS = """ CONCAT_WS(" ", directory, filename)"""
+
+    if not regexp:
+        pat = f""" {SEARCH_COLUMNS} LIKE "%{patterns[0]}%" """
+        if len(patterns) > 1:
+            for p in patterns[1:]:
+                pat += f""" AND {SEARCH_COLUMNS} LIKE "%{p}%" """
+    else:
+        # regexp only supports one argument.
+        pat = compile_pattern(patterns[0])
+
+    SQL = f"SELECT * FROM {table_name} WHERE {pat}"
+    if not text:
+        SQL += """ AND (filetype="MP4" OR filetype="M2TS")"""
+    logger.debug(SQL)
     cur.execute(SQL)
     data = cur.fetchall()
     result = [dict(d) for d in data]
@@ -86,35 +96,58 @@ def search_files(cur, table_name: str, pattern: re.Pattern, text: bool):
     return result
 
 
-def pretty_print(result: list, pat: re.Pattern):
+def pretty_print(result: list, patterns: list, regexp: bool):
+    match_list: List[re.Pattern] = []
+    for p in patterns:
+        match_list.append(re.compile(p))
+
     for item in result:
-        desc = []
-        if res := pat.search(item["directory"]):
-            dirname = pat.sub(BRIGHT_YELLOW + res.group() + DEFAULT, item["directory"])
-        else:
-            dirname = item["directory"]
-        if res := pat.search(item["filename"]):
-            fname = pat.sub(BRIGHT_YELLOW + res.group() + DEFAULT, item["filename"])
-        else:
-            fname = item["filename"]
-        for line in item["description"].split("\n"):
-            if res := pat.search(line):
-                desc.append(pat.sub(BRIGHT_YELLOW + res.group() + DEFAULT, line))
-        fsize = BRIGHT_BLUE + f'{item["width"]}x{item["height"]}' + DEFAULT
-        length = f'{item["length"]}'
+        dirname = item["directory"]
+        fname = item["filename"]
+        desc = item["description"]
+        fsize = item["filesize"]
+        length = item["length"]
         dtime = item["datetime"].strftime("%Y-%m-%d %H:%M:%S")
-        print(f'"{dirname}/{fname}"\t{fsize}\t{length}\t{dtime}')
-        if desc:
-            for s in desc:
-                print(f"    {s}")
+        framesize = (
+            (BRIGHT_BLUE + f'{item["width"]}x{item["height"]}' + DEFAULT)
+            if item["width"] > 0
+            else ""
+        )
+        for rx in match_list:
+            if res := rx.search(dirname):
+                dirname = rx.sub(BRIGHT_YELLOW + res.group() + DEFAULT, dirname)
+            if res := rx.search(fname):
+                fname = rx.sub(BRIGHT_GREEN + res.group() + DEFAULT, fname)
+            if res := rx.search(desc):
+                desc = rx.sub(
+                    BRIGHT_MAGENTA + res.group() + DEFAULT, desc, re.MULTILINE
+                )
+        print(f'"{dirname}/{fname}"\t{framesize}\t{length}\t{fsize}\t{dtime}')
+        if desc != "":
+            for line in desc.split("\n"):
+                if "\033" in line:
+                    print(f"    {line}")
+
+
+def show_query_time(start_time: float):
+    end_time = time.perf_counter()
+    time_diff = end_time - start_time
+    time_ellaps = time.gmtime(time_diff)
+    logger.info(
+        "query in : %02d:%02d:%02d.%04d",
+        time_ellaps.tm_hour,
+        time_ellaps.tm_min,
+        time_ellaps.tm_sec,
+        (time_diff - int(time_diff)) * 1000,
+    )
 
 
 def show_disk_info(drive: str):
     (total, used, free) = disk_usage(drive)
     free_tb = free / 1024**4
     used_percent = used / total * 100
-    print(
-        f"""\ndrive {drive.upper()} {str.format("{:.2f}", free_tb)}TB free"""
+    logger.info(
+        f"""drive {drive.upper()} {str.format("{:.2f}", free_tb)}TB free"""
         f""" ({str.format("{:.1f}",used_percent)}% used)"""
     )
 
@@ -144,9 +177,9 @@ def main():
         #    formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument(
-        "keyword",
+        "keywords",
         type=str,
-        nargs="*",
+        nargs="+",
         help="search word for search video files",
     )
     parser.add_argument(
@@ -198,19 +231,21 @@ def main():
 
     conn = MySQLdb.connect(host=db_host, user=db_user, passwd=db_pass, database=db_name)
     cur = conn.cursor(MySQLdb.cursors.DictCursor)
+    start_time = time.perf_counter()
     if args.query:
         pass
     else:
         color_console_enable()
-        pat = compile_pattern(args.keyword[0])
 
         if args.codec:
             for t in args.codec:
                 # TODO: list of types support
                 pass
 
-        result = search_files(cur, table_name, pat, args.text)
-        pretty_print(result, pat)
+        result = search_files(cur, table_name, args.keywords, args.text, args.regexp)
+        pretty_print(result, args.keywords, args.regexp)
+        print("")
+        show_query_time(start_time=start_time)
         show_disk_info("m:")
     conn.close()
 

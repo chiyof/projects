@@ -373,9 +373,12 @@ def main():
     log_name = Path(log_dir).joinpath(time.strftime("mp4index-%Y-%m-%d.log"))
 
     parser = argparse.ArgumentParser(
-        description="MP4ファイルのインデックスデータベースを生成する",
-        #    formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-        epilog=f"指定がない場合のデフォルトターゲット: {target_dirs}",
+        description="""
+            MP4ファイルのインデックスデータベースを生成する
+            keepフラグ: 0=キープしない, 1=キープする, 2=エラー切り貼り用, 3=削除する
+        """,
+        epilog=f"""指定がない場合のデフォルトターゲット: {target_dirs}""",
+        # formatter_class=smartformatter.SmartFormatter,
     )
     parser.add_argument(
         "directories",
