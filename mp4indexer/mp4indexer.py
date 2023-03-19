@@ -247,7 +247,7 @@ def index_files(p: Path, conn: MySQLdb.Connection, cur, tablename: str):
                 SQL = f"""
                     INSERT INTO {tablename} 
                         (filename, directory, filetype, height, width,
-                         length, filesize, fourcc, datetiem, description, keep)
+                         length, filesize, fourcc, datetime, description, keep)
                     VALUES ("{fname}", "{dirname}", "{filetype}",
                         {v_data.height}, {v_data.width}, "{play_length}",
                         {fsize}, "{v_data.fourcc}", "{timestamp}", "", 0)
