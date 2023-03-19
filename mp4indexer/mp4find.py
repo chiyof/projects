@@ -64,8 +64,8 @@ def compile_pattern(S: str):
     m = cmigemo.Migemo(migemo_dict)
     ret = m.query(S)
     logger.debug("regex = %s", ret)
-    # return ret
-    return re.compile(ret, re.IGNORECASE)
+    # return re.compile(ret, re.IGNORECASE)
+    return ret
 
 
 def search_files(cur, table_name: str, patterns: list, text: bool, regexp: bool):
@@ -83,7 +83,7 @@ def search_files(cur, table_name: str, patterns: list, text: bool, regexp: bool)
                 pat += f""" AND {SEARCH_COLUMNS} LIKE "%{p}%" """
     else:
         # regexp only supports one argument.
-        pat = compile_pattern(patterns[0])
+        pat = f""" {SEARCH_COLUMNS} REGEXP "{compile_pattern(patterns[0])}" """
 
     SQL = f"SELECT * FROM {table_name} WHERE {pat}"
     if not text:
@@ -164,9 +164,9 @@ def main():
     if (db_host := config.get("db_host")) is None:
         db_host = "192.168.10.4"
     if (db_user := config.get("db_user")) is None:
-        db_user = "kats"
+        db_user = "username"
     if (db_pass := config.get("db_pass")) is None:
-        db_pass = "sanadamitsuki"
+        db_pass = "password"
     if (db_name := config.get("db_name")) is None:
         db_name = "mp4index.db"
     if (table_name := config.get("table_name")) is None:
@@ -190,7 +190,7 @@ def main():
         default=False,
         help="also search into text files",
     )
-    parser.add_argument("-q", "--query", type=str, help="SQL query")
+    parser.add_argument("-q", "--query", type=str, help="print SQL query phrase")
     parser.add_argument(
         "-c",
         "--codec",
@@ -205,7 +205,7 @@ def main():
         action="store_const",
         const=True,
         default=False,
-        help="enable regexp search",
+        help="enable regexp search (supports only one pattern)",
     )
     parser.add_argument("-D", "--DB", type=str, help="specify database")
     parser.add_argument(

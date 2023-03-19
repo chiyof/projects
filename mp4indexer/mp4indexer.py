@@ -357,9 +357,9 @@ def main():
     if (db_host := config.get("db_host")) is None:
         db_host = "192.168.10.4"
     if (db_user := config.get("db_user")) is None:
-        db_user = "kats"
+        db_user = "username"
     if (db_pass := config.get("db_pass")) is None:
-        db_pass = "sanadamitsuki"
+        db_pass = "password"
     if (target_dirs := config.get("target_dirs")) is None:
         target_dirs = [Path.cwd()]
     if (log_dir := config.get("log_dir")) is None:
