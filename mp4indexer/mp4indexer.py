@@ -32,6 +32,8 @@ import cv2
 
 logger = logging.getLogger(__name__)
 
+__version__ = "0.5"
+
 
 class VideoData:
     """ビデオの情報をプロパティ化してアクセスしやすくするためのクラス"""
@@ -395,13 +397,23 @@ def main():
         default=False,
         help="Clean up database",
     )
-    parser.add_argument("-D", "--DB", type=Path, help="specify database")
+    parser.add_argument(
+        "-D",
+        "--DB",
+        type=Path,
+        help="specify database",
+    )
     parser.add_argument(
         "-r",
         "--remove",
         action="store_true",
         default=False,
         help="remove video files of which 'keep' flag is 2",
+    )
+    parser.add_argument(
+        "-v",
+        "--version",
+        action="version",
     )
     parser.add_argument(
         "-d",

@@ -8,8 +8,7 @@
 # last modified: Feb 4, 2023
 """
 mp4find.py:
-データベースからMP4ファイルを検索する
-"""
+データベースからMP4ファイルを検索する"""
 
 import argparse
 import json
@@ -25,6 +24,8 @@ from typing import List
 
 import cmigemo
 import MySQLdb
+
+__version__ = "0.5"
 
 
 migemo_dict = "c:/Apps/bin/dict/base-dict"
@@ -190,7 +191,12 @@ def main():
         default=False,
         help="also search into text files",
     )
-    parser.add_argument("-q", "--query", type=str, help="print SQL query phrase")
+    parser.add_argument(
+        "-q",
+        "--query",
+        type=str,
+        help="print SQL query phrase",
+    )
     parser.add_argument(
         "-c",
         "--codec",
@@ -207,7 +213,17 @@ def main():
         default=False,
         help="enable regexp search (supports only one pattern)",
     )
-    parser.add_argument("-D", "--DB", type=str, help="specify database")
+    parser.add_argument(
+        "-D",
+        "--DB",
+        type=str,
+        help="specify database",
+    )
+    parser.add_argument(
+        "-v",
+        "--version",
+        action="version",
+    )
     parser.add_argument(
         "-d",
         "--debug",
