@@ -14,8 +14,7 @@ mp4indexer.py:
 
 音声多重（含む二ヶ国語）の場合には、
 "decode_pce: Input buffer exhausted before END element found"
-というエラーがopencvから出力されるが、出力の抑制は出来ない模様
-"""
+というエラーがopencvから出力されるが、出力の抑制は出来ない模様"""
 
 import argparse
 import json
@@ -247,7 +246,7 @@ def index_files(p: Path, conn: MySQLdb.Connection, cur, tablename: str):
                 if filetype in ["M2TS", "M2T", "TS", "MPG"]:
                     v_data.fourcc = "MPEG"
                 SQL = f"""
-                    INSERT INTO {tablename} 
+                    INSERT INTO {tablename}
                         (filename, directory, filetype, height, width,
                          length, filesize, fourcc, datetime, description, keep)
                     VALUES ("{fname}", "{dirname}", "{filetype}",
@@ -414,6 +413,7 @@ def main():
         "-v",
         "--version",
         action="version",
+        version=f"%(prog)s {__version__}",
     )
     parser.add_argument(
         "-d",

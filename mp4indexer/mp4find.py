@@ -223,6 +223,7 @@ def main():
         "-v",
         "--version",
         action="version",
+        version=__version__,
     )
     parser.add_argument(
         "-d",
