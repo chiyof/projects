@@ -108,7 +108,7 @@ def pretty_print(result: list, patterns: list, regexp: bool):
         desc = item["description"]
         fsize = item["filesize"]
         length = item["length"]
-        dtime = item["datetime"].strftime("%Y-%m-%d %H:%M:%S")
+        dtime = item["filedate"].strftime("%Y-%m-%d %H:%M:%S")
         framesize = (
             (BRIGHT_BLUE + f'{item["width"]}x{item["height"]}' + DEFAULT)
             if item["width"] > 0

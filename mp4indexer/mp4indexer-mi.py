@@ -22,11 +22,13 @@ import math
 import logging
 import time
 import datetime
+import sys
 from os import environ
 from pathlib import Path
 from subprocess import run
 
 import MySQLdb
+from pymediainfo import MediaInfo
 import cv2
 
 logger = logging.getLogger(__name__)
@@ -38,10 +40,36 @@ class VideoData:
     """ビデオの情報をプロパティ化してアクセスしやすくするためのクラス"""
 
     def __init__(self):
-        self.__width = 0
+        self.__filename = ""
+        self.__directory = ""
+        self.__filetype = ""
         self.__height = 0
+        self.__width = 0
         self.__length = 0
+        self.__filesize = 0
         self.__fourcc = ""
+        self.__filedate = 0
+        self.__keep_flag = 0
+        self.__profile = ""
+        self.__audio_channels = 0
+        self.__chroma_subsampling = ""
+        self.__bit_depth = 0
+        self.__audio_codecs = ""
+        self.__audio_stream = 0
+        self.__writing_app = ""
+
+    @property
+    def filename(self):
+        """フレームサイズ（横）"""
+        return self.__filename
+    @property
+    def directory(self):
+        """フレームサイズ（横）"""
+        return self.__directory
+    @property
+    def filetype(self):
+        """フレームサイズ（横）"""
+        return self.__filetype
 
     @property
     def width(self):
@@ -59,29 +87,126 @@ class VideoData:
         return self.__length
 
     @property
+    def filesize(self):
+        """フレームサイズ（縦）"""
+        return self.__filesize
+
+    @property
     def fourcc(self):
         """ビデオエンコーダ
-
         HEV1、AVC1、MPEGなど
         """
         return self.__fourcc
 
-    @width.setter
-    def width(self, width):
-        self.__width = width
+    @property
+    def filedate(self):
+        """フレームサイズ（横）"""
+        return self.__filedate
+
+    @property
+    def keep_flag(self):
+        """フレームサイズ（横）"""
+        return self.__keep_flag
+
+    @property
+    def profile(self):
+        """フレームサイズ（横）"""
+        return self.__profile
+
+    @property
+    def audio_channels(self):
+        """フレームサイズ（横）"""
+        return self.__audio_channels
+
+    @property
+    def chroma_subsampling(self):
+        """フレームサイズ（横）"""
+        return self.__chroma_subsampling
+    @property
+    def bit_depth(self):
+        """フレームサイズ（横）"""
+        return self.__bit_depth
+    @property
+    def audio_codecs(self):
+        """フレームサイズ（横）"""
+        return self.__audio_codecs
+    @property
+    def audio_stream(self):
+        """フレームサイズ（横）"""
+        return self.__audio_stream
+
+    @property
+    def writing_app(self):
+        """フレームサイズ（横）"""
+        return self.__writing_app
+
+    @filename.setter
+    def filename(self, filename):
+        self.__filename = filename
+
+    @directory.setter
+    def directory(self, directory):
+        self.__directory = directory
+
+    @filetype.setter
+    def filetype(self, filetype):
+        self.__filetype = filetype
 
     @height.setter
     def height(self, height):
         self.__height = height
 
+    @width.setter
+    def width(self, width):
+        self.__width = width
+
     @length.setter
     def length(self, length):
         self.__length = length
+
+    @filesize.setter
+    def filesize(self, filesize):
+        self.__filesize = filesize
 
     @fourcc.setter
     def fourcc(self, fourcc):
         self.__fourcc = fourcc
 
+    @filedate.setter
+    def filedate(self, filedate):
+        self.__filedate = filedate
+
+    @keep_flag.setter
+    def keep_flag(self, keep_flag):
+        self.__keep_flag = keep_flag
+
+    @profile.setter
+    def profile(self, profile):
+        self.__profile = profile
+
+    @audio_channels.setter
+    def audio_channels(self, audio_channels):
+        self.__audio_channels = audio_channels
+
+    @chroma_subsampling.setter
+    def chroma_subsampling(self, chroma_subsampling):
+        self.__chroma_subsampling = chroma_subsampling
+
+    @bit_depth.setter
+    def bit_depth(self, bit_depth):
+        self.__bit_depth = bit_depth
+
+    @audio_codecs.setter
+    def audio_codecs(self, audio_codecs):
+        self.__audio_codecs = audio_codecs
+
+    @audio_stream.setter
+    def audio_stream(self, audio_stream):
+        self.__audio_stream = audio_stream
+
+    @writing_app.setter
+    def writing_app(self, writing_app):
+        self.__writing_app = writing_app
 
 def lsr_files(directory):
     """List all the files under specified directory
@@ -96,6 +221,37 @@ def lsr_files(directory):
     ret = list(path.glob("**/*"))
     return ret
 
+def get_media_info(fname: Path):
+    v_data = VideoData()
+    media_info = MediaInfo.parse(fname, parse_speed=0)
+    general_info = media_info.general_tracks[0]
+    video_info = media_info.video_tracks[0]
+    if general_info.count_of_audio_streams is not None:
+        audio_info = media_info.audio_tracks[0]
+        v_data.audio_channels = audio_info.channel_s
+        v_data.audio_codecs = general_info.audio_codecs
+        v_data.audio_stream = general_info.count_of_audio_streams
+    else:
+        logger.warning(f"{fname.as_posix()} doesn't have audio!?")
+    v_data.filename = fname.name
+    v_data.directory = fname.parent.as_posix()
+    v_data.filetype = fname.suffix.upper()[1:]
+    v_data.height = video_info.height
+    v_data.width = video_info.width
+    v_data.length = general_info.other_duration[3]
+    v_data.filesize = fname.stat().st_size
+    v_data.fourcc = "XVID" if video_info.codec_id == "XVID" else video_info.format
+    v_data.filedate = fname.stat().st_mtime
+    v_data.profile =video_info.format_profile
+    v_data.chroma_subsampling = video_info.chroma_subsampling
+    v_data.bit_depth = video_info.bit_depth
+    v_data.writing_app = general_info.writing_application
+    if v_data.width == 0 or v_data.height == 0:
+        logger.warn(
+            f"invalid frame size: width {v_data.width} height {v_data.height} on {fname}"
+        )
+
+    return v_data
 
 def get_video_info(fname: Path):
     """Get frame size data from the video file using OpenCV"""
@@ -108,16 +264,6 @@ def get_video_info(fname: Path):
     v_data.fourcc = "".join(list(fcc_int.to_bytes(4, "little").decode("utf-8"))).upper()
     fps = video_track.get(cv2.CAP_PROP_FPS)
     fc = video_track.get(cv2.CAP_PROP_FRAME_COUNT)
-    """
-    足りない情報:
-    ・オーディオチャンネル数
-    ・オーディオコーデック
-    ・オーディオトラック数
-    ・ビデオフォーマットプロファイル
-    ・ビデオクロマサブ・サンプリング
-    ・ビデオビット深度
-    ・ビデオエンコードアプリ
-    """
     try:
         length = fc / fps
     except ZeroDivisionError:
@@ -229,7 +375,7 @@ def index_files(p: Path, conn: MySQLdb.Connection, cur, tablename: str):
             cur.execute(
                 f"""
                 SELECT * FROM {tablename} WHERE filename="{fname}"
-                    AND directory="{dirname}" AND datetime="{timestamp}"
+                    AND directory="{dirname}" AND filedate="{timestamp}"
                 """
             )
             data = cur.fetchall()
@@ -246,25 +392,26 @@ def index_files(p: Path, conn: MySQLdb.Connection, cur, tablename: str):
             if filetype in ["MP4", "M2TS", "M2T", "MPG", "TS", "AVI", "MKV"]:
                 # ビデオファイル
                 logger.debug(f"updating {fname}")
-                v_data = get_video_info(f)
-                if v_data.length != 0:
-                    play_length = time.strftime(
-                        "%H:%M:%S", time.gmtime(math.ceil(v_data.length))
-                    )
-                else:
-                    play_length = 0
+                v_data = get_media_info(f)
                 if filetype in ["M2TS", "M2T", "TS", "MPG"]:
                     v_data.fourcc = "MPEG"
                 SQL = f"""
                     INSERT INTO {tablename}
                         (filename, directory, filetype, height, width,
-                         length, filesize, fourcc, datetime, description, keep)
+                         length, filesize, fourcc, filedate, description, keep_flag,
+                         profile, audio_channels, chroma_subsampling, bit_depth,
+                         audio_codecs, audio_stream, writing_app)
                     VALUES ("{fname}", "{dirname}", "{filetype}",
-                        {v_data.height}, {v_data.width}, "{play_length}",
-                        {fsize}, "{v_data.fourcc}", "{timestamp}", "", 0)
+                        {v_data.height}, {v_data.width}, "{v_data.length}",
+                        {fsize}, "{v_data.fourcc}", "{timestamp}", "", 0,
+                        "{v_data.profile}", {v_data.audio_channels}, "{v_data.chroma_subsampling}",
+                        {v_data.bit_depth}, "{v_data.audio_codecs}", {v_data.audio_stream},
+                        "{v_data.writing_app}")
                     ON DUPLICATE KEY
                     UPDATE height = {v_data.height}, width = {v_data.width},
-                        length = "{play_length}", datetime = "{timestamp}", filesize = {fsize}
+                        length = "{v_data.length}", filedate = "{timestamp}", filesize = {fsize},
+                        bit_depth = {v_data.bit_depth}, profile = "{v_data.profile}",
+                        fourcc = "{v_data.fourcc}"
                     RETURNING filename
                     """
             elif filetype in ["TXT"]:
@@ -282,18 +429,21 @@ def index_files(p: Path, conn: MySQLdb.Connection, cur, tablename: str):
                     logger.debug("output: {}".format(res.stderr.decode()))
                     description = f.read_text(encoding="utf-8")
                 description = description.replace("'", "''").replace('"', '""')
-                SQL = f"""INSERT INTO {tablename} VALUES ("{fname}", "{dirname}", "{filetype}",
-                        0, 0, "",
-                        {fsize}, "", "{timestamp}", "{description}", 0)
+                SQL = f"""INSERT INTO {tablename}
+                    VALUES ("{fname}", "{dirname}", "{filetype}",
+                        0, 0, "", {fsize}, "", "{timestamp}", "", 0,
+                        "", 0, "", 0, "", 0, "")
                     ON DUPLICATE KEY
-                    UPDATE datetime = "{timestamp}", filesize = {f.stat().st_size}, description = "{description}"
+                    UPDATE filedate = "{timestamp}", filesize = {f.stat().st_size}, description = "{description}"
                     RETURNING filename
                     """
             else:
                 logger.info(f"unknown suffix : {f.parent}\\{fname}")
 
-                SQL = f"""INSERT INTO {tablename} VALUES ("{fname}", "{dirname}", "{filetype}",
-                    0, 0, "", {fsize}, "", "{timestamp}", "", 0)
+                SQL = f"""INSERT INTO {tablename}
+                    VALUES ("{fname}", "{dirname}", "{filetype}",
+                        0, 0, "", {fsize}, "", "{timestamp}", "", 0,
+                        "", 0, "", 0, "", 0, "")
                     ON DUPLICATE KEY
                     UPDATE filename = filename
                     RETURNING *
@@ -304,11 +454,15 @@ def index_files(p: Path, conn: MySQLdb.Connection, cur, tablename: str):
             except MySQLdb.OperationalError as e:
                 print(e)
                 logger.error(SQL)
-                exit(-1)
+                sys.exit(-1)
             except MySQLdb.ProgrammingError as e:
                 print(e)
                 logger.error(SQL)
-                exit(-1)
+                sys.exit(-1)
+            except MySQLdb.DatabaseError as e:
+                print(e)
+                logger.error(SQL)
+                sys.exit(-1)
             else:
                 res = cur.fetchall()
                 if res is None:
@@ -326,27 +480,42 @@ def create_table(cur, tablename: str):
     # filetype    | CHAR(8)
     # height      | INT UNSIGNED
     # width       | INT UNSIGNED
-    # length      | CHAR(8)
+    # length      | CHAR(16)
     # filesize    | BIGINT
     # fourcc      | CHAR(4)
-    # datetime    | TIMESTAMP
+    # filedate    | TIMESTAMP
     # description | TEXT
     # keep        | TINYINT (0: default, 1: keep, 2: remove)
+    # =================================================================
+    # profile     | CHAR(24)
+    # audio_channels    | TINYINT
+    # chroma_subsampling | CHAR(8)
+    # bit_depth   | TINYINT
+    # audio_codecs | CHAR(24)
+    # audio_stream | TINYINT
+    # writing_app  | CHAR(32)
     try:
         cur.execute(
             f"""
             CREATE TABLE IF NOT EXISTS {tablename} (
-                filename varchar(255) NOT NULL,
-                directory varchar(255) NOT NULL,
-                filetype char(8) NOT NULL DEFAULT "",
-                height INT unsigned NOT NULL DEFAULT 0,
-                width INT unsigned NOT NULL DEFAULT 0,
-                length char(8) DEFAULT "",
-                filesize bigint unsigned NOT NULL DEFAULT 0,
+                filename VARCHAR(255) NOT NULL,
+                directory VARCHAR(255) NOT NULL,
+                filetype CHAR(8) NOT NULL DEFAULT "",
+                height INT UNSIGNED NOT NULL DEFAULT 0,
+                width INT UNSIGNED NOT NULL DEFAULT 0,
+                length CHAR(16) DEFAULT "",
+                filesize BIGINT UNSIGNED NOT NULL DEFAULT 0,
                 fourcc CHAR(4) DEFAULT "",
-                datetime timestamp default 0,
+                filedate TIMESTAMP DEFAULT 0,
                 description TEXT DEFAULT "",
-                keep tinyint default 0,
+                keep_flag TINYINT DEFAULT 0,
+                profile CHAR(24) DEFAULT "",
+                audio_channels TINYINT DEFAULT 0,
+                chroma_subsampling CHAR(8) DEFAULT "",
+                bit_depth TINYINT DEFAULT 0,
+                audio_codecs CHAR(24) DEFAULT "",
+                audio_stream TINYINT DEFAULT 0,
+                writing_app  CHAR(32) DEFAULT "",
             PRIMARY KEY (directory, filename))
             """
         )
