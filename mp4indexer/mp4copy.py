@@ -132,7 +132,7 @@ def encode_audio(file: Path):
     return file.with_suffix(".m4a")
 
 
-def remux_and_copy_files(files):
+def remux_files(files):
     """MP4ファイルとAACファイルをremuxし、所定のディレクトリに移動・コピーする.
 
     Args:
@@ -189,20 +189,29 @@ def remux_and_copy_files(files):
                 cmd += f" --chapter {tmp_chapter3}"
             logger.debug(cmd)
             run(cmd, check=False)
+        copy_file(mp4file, outdir)
 
-        # copy & move files
-        if mp4dir.exists() and not without_ts:
-            logger.info("copy %s to $MP4DIR", base + ".mp4")
+        for f in [tmp_video0, tmp_audio1, tmp_audio2, tmp_chapter3]:
             try:
-                copy(base + ".mp4", mp4dir)
-            except shutil.Error:
-                input(BRIGHT_RED + f"{base}.mp4はすでに存在しているためスキップします。" + DEFAULT)
+                f.unlink()
             except FileNotFoundError:
-                input(BRIGHT_YELLOW + f"{base}.mp4は見つからないためスキップします。" + DEFAULT)
-        if outdir.exists() and not without_ts:
-            logger.info("move %s", base + ".m2ts")
+                pass
+
+def copy_file(fname: Path, destdir: Path):
+        # copy & move files
+        base = Path(fname.name)
+        if mp4dir.exists() and not without_ts:
+            logger.info("copy %s to $MP4DIR", fname)
             try:
-                move(base + ".m2ts", outdir)
+                copy(fname, destdir)
+            except shutil.Error:
+                input(BRIGHT_RED + f"{fname}はすでに存在しているためスキップします。" + DEFAULT)
+            except FileNotFoundError:
+                input(BRIGHT_YELLOW + f"{fname}は見つからないためスキップします。" + DEFAULT)
+        if outdir.exists() and not without_ts:
+            logger.info("move %s", base.with_suffix(".m2ts"))
+            try:
+                move(base.with_suffix(".m2ts"), outdir)
             except shutil.Error:
                 input(BRIGHT_RED + f"{base}.m2tsはすでに存在しているためスキップします。" + DEFAULT)
             except FileNotFoundError:
@@ -210,17 +219,17 @@ def remux_and_copy_files(files):
             except PermissionError:
                 input(BRIGHT_YELLOW + f"{base}.m2tsは他のプロセスで開かれているためスキップします。" + DEFAULT)
 
-        logger.info("move %s", base + ".mp4")
+        logger.info("move %s", fname)
         try:
-            move(base + ".mp4", outdir)
+            move(fname, outdir)
         except shutil.Error:
-            input(BRIGHT_RED + f"{base}.mp4はすでに存在しているためスキップします。" + DEFAULT)
+            input(BRIGHT_RED + f"{fname}はすでに存在しているためスキップします。" + DEFAULT)
         except FileNotFoundError:
-            input(BRIGHT_YELLOW + f"{base}.mp4は見つからないためスキップします。" + DEFAULT)
+            input(BRIGHT_YELLOW + f"{fname}は見つからないためスキップします。" + DEFAULT)
         except PermissionError:
-            input(BRIGHT_YELLOW + f"{base}.mp4は他のプロセスで開かれているためスキップします。" + DEFAULT)
+            input(BRIGHT_YELLOW + f"{fname}は他のプロセスで開かれているためスキップします。" + DEFAULT)
 
-        for delfile in list(path.glob(base.replace("[", "[[]") + "*")):
+        for delfile in list(path.glob(base.stem.replace("[", "[[]") + "*")):
             logger.debug(f'send2trash "{delfile}"')
             try:
                 send2trash(delfile)
@@ -230,11 +239,6 @@ def remux_and_copy_files(files):
                 input(BRIGHT_YELLOW + f"{delfile}は他のプロセスで開かれているためスキップします。" + DEFAULT)
             except OSError:
                 input(BRIGHT_YELLOW + f"{delfile}は他のプロセスで開かれているためスキップします。" + DEFAULT)
-        for f in [tmp_video0, tmp_audio1, tmp_audio2, tmp_chapter3]:
-            try:
-                f.unlink()
-            except FileNotFoundError:
-                pass
 
 
 if __name__ == "__main__":
@@ -285,13 +289,13 @@ if __name__ == "__main__":
     else:
         color_console_enable()
         SetConsoleTitle(Path.cwd().name.replace("Enc-", ""))
-        files = list(path.glob("*.mp4"))
+        files = list(path.glob("*.mp4")) + list(path.glob("*.mkv"))
 
         files = open_check(files)
 
         try:
             with lockFile.open("w"):
-                remux_and_copy_files(files)
+                remux_files(files)
         except shutil.Error:
             pass
         finally:
