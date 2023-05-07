@@ -228,8 +228,10 @@ def get_media_info(fname: Path):
     video_info = media_info.video_tracks[0]
     if general_info.count_of_audio_streams is not None:
         audio_info = media_info.audio_tracks[0]
-        v_data.audio_channels = audio_info.channel_s
+        v_data.audio_channels = audio_info.channel_s if audio_info.channel_s is not None else 0
         v_data.audio_codecs = general_info.audio_codecs
+        if len(v_data.audio_codecs) > 12:
+            v_data.audio_codecs = audio_info.other_format[0]
         v_data.audio_stream = general_info.count_of_audio_streams
     else:
         logger.warning(f"{fname.as_posix()} doesn't have audio!?")
@@ -238,7 +240,10 @@ def get_media_info(fname: Path):
     v_data.filetype = fname.suffix.upper()[1:]
     v_data.height = video_info.height
     v_data.width = video_info.width
-    v_data.length = general_info.other_duration[3]
+    try:
+        v_data.length = general_info.other_duration[3]
+    except:
+        logger.error(f"{fname.as_posix()} doesn't have length")
     v_data.filesize = fname.stat().st_size
     v_data.fourcc = "XVID" if video_info.codec_id == "XVID" else video_info.format
     v_data.filedate = fname.stat().st_mtime
@@ -493,7 +498,7 @@ def create_table(cur, tablename: str):
     # bit_depth   | TINYINT
     # audio_codecs | CHAR(24)
     # audio_stream | TINYINT
-    # writing_app  | CHAR(32)
+    # writing_app  | CHAR(128)
     try:
         cur.execute(
             f"""
@@ -515,7 +520,7 @@ def create_table(cur, tablename: str):
                 bit_depth TINYINT DEFAULT 0,
                 audio_codecs CHAR(24) DEFAULT "",
                 audio_stream TINYINT DEFAULT 0,
-                writing_app  CHAR(32) DEFAULT "",
+                writing_app  CHAR(128) DEFAULT "",
             PRIMARY KEY (directory, filename))
             """
         )

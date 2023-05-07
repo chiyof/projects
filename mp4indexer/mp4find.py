@@ -106,7 +106,7 @@ def pretty_print(result: list, patterns: list, regexp: bool):
         dirname = item["directory"]
         fname = item["filename"]
         desc = item["description"]
-        fsize = item["filesize"]
+        fsize = "{:,}".format(item["filesize"])
         length = item["length"]
         dtime = item["filedate"].strftime("%Y-%m-%d %H:%M:%S")
         framesize = (
@@ -186,8 +186,7 @@ def main():
     parser.add_argument(
         "-t",
         "--text",
-        action="store_const",
-        const=True,
+        action="store_true",
         default=False,
         help="also search into text files",
     )
@@ -206,18 +205,19 @@ def main():
         help="specify codec type(s)",
     )
     parser.add_argument(
+        "-p",
+        "--play",
+        action="store_true",
+        default=False,
+        help="print with 'start' command and full-path"
+    )
+    parser.add_argument(
         "-r",
         "--regexp",
         action="store_const",
         const=True,
         default=False,
         help="enable regexp search (supports only one pattern)",
-    )
-    parser.add_argument(
-        "-D",
-        "--DB",
-        type=str,
-        help="specify database",
     )
     parser.add_argument(
         "-v",
