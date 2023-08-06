@@ -209,15 +209,16 @@ def copy_file(fname: Path, destdir: Path):
             except FileNotFoundError:
                 input(BRIGHT_YELLOW + f"{fname}は見つからないためスキップします。" + DEFAULT)
         if outdir.exists() and not without_ts:
-            logger.info("move %s", base.with_suffix(".m2ts"))
+            m2tsname = base.with_suffix(".m2ts")
+            logger.info("move %s", m2tsname)
             try:
-                move(base.with_suffix(".m2ts"), outdir)
+                move(m2tsname, outdir)
             except shutil.Error:
-                input(BRIGHT_RED + f"{base}.m2tsはすでに存在しているためスキップします。" + DEFAULT)
+                input(BRIGHT_RED + f"{m2tsname}はすでに存在しているためスキップします。" + DEFAULT)
             except FileNotFoundError:
-                input(BRIGHT_YELLOW + f"{base}.m2tsは見つからないためスキップします。" + DEFAULT)
+                input(BRIGHT_YELLOW + f"{m2tsname}は見つからないためスキップします。" + DEFAULT)
             except PermissionError:
-                input(BRIGHT_YELLOW + f"{base}.m2tsは他のプロセスで開かれているためスキップします。" + DEFAULT)
+                input(BRIGHT_YELLOW + f"{m2tsname}は他のプロセスで開かれているためスキップします。" + DEFAULT)
 
         logger.info("move %s", fname)
         try:
