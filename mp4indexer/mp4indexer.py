@@ -644,7 +644,11 @@ def main():
             if not p.exists():
                 logger.info("%s is not exist", p)
             else:
-                index_files(p, conn, cur, tablename)
+                try:
+                    index_files(p, conn, cur, tablename)
+                except FileNotFoundError:
+                    logger.error(f"{d} does not exist. Skipping.")
+
 
     time_end = time.perf_counter()
     time_diff = time_end - time_start
