@@ -21,9 +21,10 @@ from pathlib import Path
 from datetime import datetime, timedelta
 from shutil import disk_usage
 from typing import List
+from sys import exit
 
 import cmigemo
-import MySQLdb
+import mariadb
 
 __version__ = "0.5"
 
@@ -37,6 +38,8 @@ BRIGHT_MAGENTA = "\033[95m"
 BRIGHT_CYAN = "\033[96m"
 BRIGHT_WHITE = "\033[97m"
 DEFAULT = "\033[39m"
+
+encoded_video_ext = ["M2TS", "MP4", "MKV"]
 
 
 def color_console_enable():
@@ -88,7 +91,8 @@ def search_files(cur, table_name: str, patterns: list, text: bool, regexp: bool)
 
     SQL = f"SELECT * FROM {table_name} WHERE {pat}"
     if not text:
-        SQL += """ AND (filetype="MP4" OR filetype="M2TS")"""
+        #TODO: filetypeをencoded_video_extから作りたいけど、面倒なのでおいておく
+        SQL += """ AND (filetype in ("MP4", "MKV", "M2TS"))"""
     logger.debug(SQL)
     cur.execute(SQL)
     data = cur.fetchall()
@@ -180,14 +184,14 @@ def main():
     parser.add_argument(
         "keywords",
         type=str,
-        nargs="+",
+        nargs="*",
         help="search word for search video files",
     )
     parser.add_argument(
         "-t",
         "--text",
         action="store_true",
-        default=False,
+        #default=False,
         help="also search into text files",
     )
     parser.add_argument(
@@ -197,26 +201,32 @@ def main():
         help="print SQL query phrase",
     )
     parser.add_argument(
+        "-C",
+        "--console",
+        action="store_true",
+        #default=False,
+        help="run as console",
+    )
+    parser.add_argument(
         "-c",
         "--codec",
         type=str,
         action="append",
-        nargs="+",
+        nargs="*",
         help="specify codec type(s)",
     )
     parser.add_argument(
         "-p",
         "--play",
         action="store_true",
-        default=False,
+        #default=False,
         help="print with 'start' command and full-path"
     )
     parser.add_argument(
         "-r",
         "--regexp",
-        action="store_const",
-        const=True,
-        default=False,
+        action="store_true",
+        #default=False,
         help="enable regexp search (supports only one pattern)",
     )
     parser.add_argument(
@@ -228,10 +238,9 @@ def main():
     parser.add_argument(
         "-d",
         "--debug",
-        metavar="debug",
-        action="store_const",
-        const=True,
-        default=False,
+        #metavar="debug",
+        action="store_true",
+        #default=False,
         help="Print Debug information",
     )
     args = parser.parse_args()
@@ -242,12 +251,8 @@ def main():
 
     logger.debug(args)
 
-    if args.DB:
-        logger.info(f"DB name: {args.DB}")
-        db_name = args.DB
-
-    conn = MySQLdb.connect(host=db_host, user=db_user, passwd=db_pass, database=db_name)
-    cur = conn.cursor(MySQLdb.cursors.DictCursor)
+    conn = mariadb.connect(host=db_host, user=db_user, passwd=db_pass, database=db_name)
+    cur = conn.cursor(dictionary=True)
     start_time = time.perf_counter()
     if args.query:
         pass
@@ -259,8 +264,18 @@ def main():
                 # TODO: list of types support
                 pass
 
-        result = search_files(cur, table_name, args.keywords, args.text, args.regexp)
-        pretty_print(result, args.keywords, args.regexp)
+        elif (len(args.keywords)==0) or args.console:
+            # コンソールモード
+            while True:
+                try:
+                    keyword = input("> ").split()
+                    result = search_files(cur, table_name, keyword, args.text, args.regexp)
+                    pretty_print(result, keyword, args.regexp)
+                except EOFError:
+                    exit()
+        else:
+            result = search_files(cur, table_name, args.keywords, args.text, args.regexp)
+            pretty_print(result, args.keywords, args.regexp)
         print("")
         show_query_time(start_time=start_time)
         show_disk_info("m:")

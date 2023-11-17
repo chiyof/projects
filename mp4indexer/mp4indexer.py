@@ -17,24 +17,25 @@ mp4indexer.py:
 というエラーがopencvから出力されるが、出力の抑制は出来ない模様"""
 
 import argparse
-import json
-import math
-import logging
-import time
 import datetime
+import json
+import logging
+import math
 import sys
+import time
 from os import environ
 from pathlib import Path
 from subprocess import run
 
+import cv2
 import MySQLdb
 from pymediainfo import MediaInfo
-import cv2
 
 logger = logging.getLogger(__name__)
 
 __version__ = "0.5"
 
+flag_verbose = False
 
 class VideoData:
     """ビデオの情報をプロパティ化してアクセスしやすくするためのクラス"""
@@ -62,10 +63,12 @@ class VideoData:
     def filename(self):
         """フレームサイズ（横）"""
         return self.__filename
+
     @property
     def directory(self):
         """フレームサイズ（横）"""
         return self.__directory
+
     @property
     def filetype(self):
         """フレームサイズ（横）"""
@@ -122,14 +125,17 @@ class VideoData:
     def chroma_subsampling(self):
         """フレームサイズ（横）"""
         return self.__chroma_subsampling
+
     @property
     def bit_depth(self):
         """フレームサイズ（横）"""
         return self.__bit_depth
+
     @property
     def audio_codecs(self):
         """フレームサイズ（横）"""
         return self.__audio_codecs
+
     @property
     def audio_stream(self):
         """フレームサイズ（横）"""
@@ -208,6 +214,7 @@ class VideoData:
     def writing_app(self, writing_app):
         self.__writing_app = writing_app
 
+
 def lsr_files(directory):
     """List all the files under specified directory
 
@@ -221,6 +228,7 @@ def lsr_files(directory):
     ret = list(path.glob("**/*"))
     return ret
 
+
 def get_media_info(fname: Path):
     v_data = VideoData()
     media_info = MediaInfo.parse(fname, parse_speed=0)
@@ -228,7 +236,9 @@ def get_media_info(fname: Path):
     video_info = media_info.video_tracks[0]
     if general_info.count_of_audio_streams is not None:
         audio_info = media_info.audio_tracks[0]
-        v_data.audio_channels = audio_info.channel_s if audio_info.channel_s is not None else 0
+        v_data.audio_channels = (
+            audio_info.channel_s if audio_info.channel_s is not None else 0
+        )
         v_data.audio_codecs = general_info.audio_codecs
         if len(v_data.audio_codecs) > 12:
             v_data.audio_codecs = audio_info.other_format[0]
@@ -247,7 +257,7 @@ def get_media_info(fname: Path):
     v_data.filesize = fname.stat().st_size
     v_data.fourcc = "XVID" if video_info.codec_id == "XVID" else video_info.format
     v_data.filedate = fname.stat().st_mtime
-    v_data.profile =video_info.format_profile
+    v_data.profile = video_info.format_profile
     v_data.chroma_subsampling = video_info.chroma_subsampling
     v_data.bit_depth = video_info.bit_depth
     v_data.writing_app = general_info.writing_application
@@ -257,6 +267,7 @@ def get_media_info(fname: Path):
         )
 
     return v_data
+
 
 def get_video_info(fname: Path):
     """Get frame size data from the video file using OpenCV"""
@@ -470,6 +481,8 @@ def index_files(p: Path, conn: MySQLdb.Connection, cur, tablename: str):
                 sys.exit(-1)
             else:
                 res = cur.fetchall()
+                if flag_verbose:
+                    print(res)
                 if res is None:
                     logger.warn(f"insertion failed: {fname}")
                 else:
@@ -595,6 +608,12 @@ def main():
     )
     parser.add_argument(
         "-v",
+        "--verbose",
+        action="store_true",
+        default=False,
+        help="print verbose information",
+    )
+    parser.add_argument(
         "--version",
         action="version",
         version=f"%(prog)s {__version__}",
@@ -617,11 +636,14 @@ def main():
     if args.debug:
         logger.setLevel(logging.DEBUG)
 
+    flag_verbose = args.verbose
+
     if args.DB:
         logger.info(f"DB name: {args.DB}")
         db_name = args.DB
 
-    logger.debug(target_dirs)
+    logger.debug(args)
+    logger.debug("db_host:{0}, db_user:{1}, db_pass:{2}, db_name:{3}".format(db_host, db_user, db_pass, db_name))
     conn = MySQLdb.connect(
         host=db_host, user=db_user, password=db_pass, database=db_name
     )
@@ -649,7 +671,6 @@ def main():
                 except FileNotFoundError:
                     logger.error(f"{d} does not exist. Skipping.")
 
-
     time_end = time.perf_counter()
     time_diff = time_end - time_start
     time_ellaps = time.gmtime(time_diff)
@@ -674,6 +695,9 @@ if __name__ == "__main__":
     ch = logging.StreamHandler()
     formatter = logging.Formatter("%(asctime)s %(name)-12s %(levelname)-8s %(message)s")
     ch.setFormatter(formatter)
+    #fh = logging.FileHandler("C:/Users/kats/projects/mp4indexer/log.log")
+    #fh.setFormatter(formatter)
+    #logger.addHandler(fh)
     logger.addHandler(ch)
     logger.setLevel(logging.INFO)
     logger.propagate = False
