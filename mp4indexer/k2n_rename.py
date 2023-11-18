@@ -18,7 +18,7 @@ from pathlib import Path
 from os import rename
 
 from jaconv import h2z
-from kanjize import kanji2int
+from kanjize import kanji2number
 
 
 # 置換する漢数字のパターン指定
@@ -36,7 +36,7 @@ def k2n_replace(name):
     match = re.search(pattern, name)
     if match:
         repl = "{}{}".format(
-            h2z(str(kanji2int(match.group(1))), digit=True), match.group(2)
+            h2z(str(kanji2number(match.group(1))), digit=True), match.group(2)
         )
         new_name = re.sub(match.group(0), repl, name)
         return new_name
