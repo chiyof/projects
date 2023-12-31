@@ -20,7 +20,6 @@ import argparse
 import datetime
 import json
 import logging
-import math
 import sys
 import time
 from os import environ
@@ -28,7 +27,7 @@ from pathlib import Path
 from subprocess import run
 
 import cv2
-import MySQLdb
+import mariadb
 from pymediainfo import MediaInfo
 
 logger = logging.getLogger(__name__)
@@ -297,7 +296,7 @@ def get_video_info(fname: Path):
     return v_data
 
 
-def remove(conn: MySQLdb.Connection, cur, tablename: str):
+def remove(conn: mariadb.Connection, cur, tablename: str):
     """DBのデータから keep == 2 のレコードを検索し、ファイルが実在すれば削除する
 
     Args:
@@ -329,7 +328,7 @@ def remove(conn: MySQLdb.Connection, cur, tablename: str):
     return count
 
 
-def cleanup(conn: MySQLdb.Connection, cur, tablename: str):
+def cleanup(conn: mariadb.Connection, cur, tablename: str):
     """DBのデータが示すファイルが存在するかどうかを確認し、存在しなければDBからレコードを削除する
 
     Args:
@@ -361,7 +360,7 @@ def cleanup(conn: MySQLdb.Connection, cur, tablename: str):
     return count
 
 
-def index_files(p: Path, conn: MySQLdb.Connection, cur, tablename: str):
+def index_files(p: Path, conn: mariadb.Connection, cur, tablename: str):
     """Get video info from the video file using OpenCV"""
     v_data = VideoData()
     if p.is_file():
@@ -467,15 +466,15 @@ def index_files(p: Path, conn: MySQLdb.Connection, cur, tablename: str):
 
             try:
                 cur.execute(SQL)
-            except MySQLdb.OperationalError as e:
+            except mariadb.OperationalError as e:
                 print(e)
                 logger.error(SQL)
                 sys.exit(-1)
-            except MySQLdb.ProgrammingError as e:
+            except mariadb.ProgrammingError as e:
                 print(e)
                 logger.error(SQL)
                 sys.exit(-1)
-            except MySQLdb.DatabaseError as e:
+            except mariadb.DatabaseError as e:
                 print(e)
                 logger.error(SQL)
                 sys.exit(-1)
@@ -537,7 +536,7 @@ def create_table(cur, tablename: str):
             PRIMARY KEY (directory, filename))
             """
         )
-    except MySQLdb.OperationalError:
+    except mariadb.OperationalError:
         # すでにTABLEがある
         pass
     return
@@ -644,10 +643,10 @@ def main():
 
     logger.debug(args)
     logger.debug("db_host:{0}, db_user:{1}, db_pass:{2}, db_name:{3}".format(db_host, db_user, db_pass, db_name))
-    conn = MySQLdb.connect(
+    conn = mariadb.connect(
         host=db_host, user=db_user, password=db_pass, database=db_name
     )
-    cur = conn.cursor(MySQLdb.cursors.DictCursor)
+    cur = conn.cursor(dictionary=True)
     create_table(cur, tablename)
 
     dirs = args.directories
