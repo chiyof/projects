@@ -80,7 +80,7 @@ trans_tbl = str.maketrans(trans_dict)
 for x in target_files:
     logger.debug("processing: %s", x)
     fname = x.name
-    m = re.search("\[.{3,15}?\]\.", fname)
+    m = re.search("\\[.{3,15}?\\]\\.", fname)
     if m:
         logger.debug("station: %s", m.group(0))
         fname = fname.replace(m.group(0), "TV_STATION")
@@ -88,7 +88,7 @@ for x in target_files:
     new_name = jaconv.z2h(fname, ascii=True, digit=True, kana=False)
     new_name = new_name.replace("!?", "！？")
     new_name = new_name.translate(trans_tbl)
-    new_name = re.sub("\s+", " ", new_name)
+    new_name = re.sub("\\s+", " ", new_name)
     if m:
         fname = new_name.replace("TV_STATION", m.group(0))
 
