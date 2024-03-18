@@ -19,6 +19,7 @@ last modified: Aug 19, 2022
 
 import argparse
 import logging
+import os
 import random
 import shutil
 import string
@@ -296,6 +297,7 @@ if __name__ == "__main__":
 
         try:
             with lockFile.open("w"):
+                lockFile.write_text(str(os.getpid()))
                 remux_files(files)
         except shutil.Error:
             pass
