@@ -269,10 +269,12 @@ def main():
             while True:
                 try:
                     keyword = input("> ").split()
-                    result = search_files(cur, table_name, keyword, args.text, args.regexp)
-                    pretty_print(result, keyword, args.regexp)
                 except EOFError:
                     exit()
+                if keyword[0] == "":
+                    continue
+                result = search_files(cur, table_name, keyword, args.text, args.regexp)
+                pretty_print(result, keyword, args.regexp)
         else:
             result = search_files(cur, table_name, args.keywords, args.text, args.regexp)
             pretty_print(result, args.keywords, args.regexp)

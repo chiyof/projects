@@ -74,6 +74,7 @@ trans_dict = {
     "|": "｜",
     "\\": "￥",
     "♯": "＃",
+    "~": "〜",
 }
 trans_tbl = str.maketrans(trans_dict)
 
